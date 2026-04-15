@@ -1,0 +1,28 @@
+/* App-level styles — most design lives in index.css */
+
+/* Responsive table on mobile */
+@media (max-width: 768px) {
+  table {
+    font-size: 12px;
+  }
+
+  th, td {
+    padding: 8px 10px !important;
+  }
+
+  /* Hide less important columns on small screens */
+  th:nth-child(5),
+  td:nth-child(5),
+  th:nth-child(9),
+  td:nth-child(9) {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+  }
+}
