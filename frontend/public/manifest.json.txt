@@ -1,0 +1,25 @@
+{
+  "short_name": "StayTrack",
+  "name": "StayTrack — Booking Manager",
+  "description": "Airbnb booking tracker for offline bookings",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#d4a853",
+  "background_color": "#0f0f1a",
+  "scope": "/"
+}
