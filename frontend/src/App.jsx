@@ -222,7 +222,11 @@ export default function App() {
                 This will be saved directly to your Google Sheet.
               </p>
             </div>
-            <BookingForm onSubmit={handleAddBooking} loading={loading} />
+            <BookingForm
+              onSubmit={handleAddBooking}
+              loading={loading}
+              existingBookings={bookings}
+            />
           </div>
         )}
       </main>

@@ -1,8 +1,10 @@
 /**
  * BookingForm.jsx
- * A full-featured booking form with auto-calculation of remaining amount.
+ * Booking form with property dropdown and date overlap validation.
+ * Icon 613 and Citysmart block overlapping bookings.
+ * Gulberg Outsource and Bahria Enclave allow overlapping bookings.
  */
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 
 // ─── Initial empty form state ─────────────────────────────────────────────────
 const EMPTY_FORM = {
@@ -11,18 +13,50 @@ const EMPTY_FORM = {
   checkIn: "",
   checkOut: "",
   guests: 1,
-  property: "",
+  property: "Icon 613",
   totalPrice: "",
   advancePaid: "",
   source: "WhatsApp",
   notes: "",
 };
 
-const SOURCES = ["WhatsApp", "Phone Call", "Instagram", "Facebook", "Airbnb", "Booking.com", "Walk-in", "Other"];
+// ─── Properties configuration ─────────────────────────────────────────────────
+// noOverlap: true  → block bookings if dates clash
+// noOverlap: false → allow overlapping bookings freely
+const PROPERTIES = [
+  { name: "Icon 613",                noOverlap: true  },
+  { name: "Citysmart",               noOverlap: true  },
+  { name: "Gulberg Outsource",       noOverlap: false },
+  { name: "Bahria Enclave Outsource",noOverlap: false },
+];
 
-export default function BookingForm({ onSubmit, loading }) {
+// Properties that require overlap checking (for easy lookup)
+const OVERLAP_CHECKED = new Set(
+  PROPERTIES.filter((p) => p.noOverlap).map((p) => p.name)
+);
+
+const SOURCES = [
+  "WhatsApp", "Phone Call", "Instagram",
+  "Facebook", "Airbnb", "Booking.com", "Walk-in", "Other",
+];
+
+// ─── Check if two date ranges overlap ────────────────────────────────────────
+// Two bookings overlap when one starts before the other ends.
+// We treat same-day checkout/checkin as NOT an overlap (back-to-back is fine).
+function datesOverlap(existingCheckIn, existingCheckOut, newCheckIn, newCheckOut) {
+  const eIn  = new Date(existingCheckIn);
+  const eOut = new Date(existingCheckOut);
+  const nIn  = new Date(newCheckIn);
+  const nOut = new Date(newCheckOut);
+  // Overlap if: new check-in is before existing check-out
+  //         AND new check-out is after existing check-in
+  return nIn < eOut && nOut > eIn;
+}
+
+export default function BookingForm({ onSubmit, loading, existingBookings = [] }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
+  const [overlapError, setOverlapError] = useState("");
 
   // ─── Auto-calculate remaining amount ───────────────────────────────────────
   const remaining =
@@ -34,30 +68,66 @@ export default function BookingForm({ onSubmit, loading }) {
       ? Math.max(
           0,
           Math.ceil(
-            (new Date(form.checkOut) - new Date(form.checkIn)) / (1000 * 60 * 60 * 24)
+            (new Date(form.checkOut) - new Date(form.checkIn)) /
+              (1000 * 60 * 60 * 24)
           )
         )
       : 0;
 
+  // ─── Check for overlapping bookings in real-time ───────────────────────────
+  // Runs whenever property, checkIn, or checkOut changes
+  const checkOverlap = (property, checkIn, checkOut) => {
+    // Only validate properties that require it
+    if (!OVERLAP_CHECKED.has(property) || !checkIn || !checkOut) {
+      setOverlapError("");
+      return false;
+    }
+
+    // Find any existing booking for the same property with overlapping dates
+    const conflict = existingBookings.find(
+      (b) =>
+        b.property === property &&
+        b.status !== "Completed" &&
+        datesOverlap(b.checkIn, b.checkOut, checkIn, checkOut)
+    );
+
+    if (conflict) {
+      setOverlapError(
+        `🚫 This apartment is already reserved at this time. ` +
+        `(${conflict.guestName} — ${conflict.checkIn} to ${conflict.checkOut})`
+      );
+      return true;
+    }
+
+    setOverlapError("");
+    return false;
+  };
+
   // ─── Handle input changes ───────────────────────────────────────────────────
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-    // Clear error on change
+    const updated = { ...form, [name]: value };
+    setForm(updated);
+
+    // Clear field-level error on change
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: "" }));
+
+    // Re-check overlap whenever relevant fields change
+    if (["property", "checkIn", "checkOut"].includes(name)) {
+      checkOverlap(updated.property, updated.checkIn, updated.checkOut);
+    }
   };
 
   // ─── Validate form ──────────────────────────────────────────────────────────
   const validate = () => {
     const newErrors = {};
     if (!form.guestName.trim()) newErrors.guestName = "Guest name is required";
-    if (!form.checkIn) newErrors.checkIn = "Check-in date is required";
-    if (!form.checkOut) newErrors.checkOut = "Check-out date is required";
+    if (!form.checkIn)          newErrors.checkIn   = "Check-in date is required";
+    if (!form.checkOut)         newErrors.checkOut  = "Check-out date is required";
     if (form.checkIn && form.checkOut && form.checkOut <= form.checkIn)
       newErrors.checkOut = "Check-out must be after check-in";
-    if (!form.property.trim()) newErrors.property = "Property name is required";
-    if (form.totalPrice && isNaN(parseFloat(form.totalPrice)))
-      newErrors.totalPrice = "Enter a valid number";
+    if (form.totalPrice  && isNaN(parseFloat(form.totalPrice)))
+      newErrors.totalPrice  = "Enter a valid number";
     if (form.advancePaid && isNaN(parseFloat(form.advancePaid)))
       newErrors.advancePaid = "Enter a valid number";
     return newErrors;
@@ -66,18 +136,32 @@ export default function BookingForm({ onSubmit, loading }) {
   // ─── Submit handler ─────────────────────────────────────────────────────────
   const handleSubmit = (e) => {
     e.preventDefault();
+
+    // Run field validation
     const validationErrors = validate();
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       return;
     }
-    onSubmit(form, () => setForm(EMPTY_FORM));
+
+    // Run overlap check one final time before submitting
+    const hasOverlap = checkOverlap(form.property, form.checkIn, form.checkOut);
+    if (hasOverlap) return; // Stop — overlap error is already shown
+
+    onSubmit(form, () => {
+      setForm(EMPTY_FORM);
+      setOverlapError("");
+    });
   };
 
   // ─── Style helpers ──────────────────────────────────────────────────────────
   const fieldStyle = (name) => ({
     borderColor: errors[name] ? "var(--accent-rose)" : undefined,
   });
+
+  // ─── Which property is currently selected ──────────────────────────────────
+  const selectedProp  = PROPERTIES.find((p) => p.name === form.property);
+  const isNoOverlap   = selectedProp?.noOverlap;
 
   return (
     <div className="card fade-in" style={{ padding: "28px 32px" }}>
@@ -90,6 +174,7 @@ export default function BookingForm({ onSubmit, loading }) {
       </div>
 
       <form onSubmit={handleSubmit}>
+
         {/* ── Row 1: Guest Info ── */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
           <div className="form-group">
@@ -101,7 +186,9 @@ export default function BookingForm({ onSubmit, loading }) {
               onChange={handleChange}
               style={fieldStyle("guestName")}
             />
-            {errors.guestName && <span style={{ color: "var(--accent-rose)", fontSize: 12 }}>{errors.guestName}</span>}
+            {errors.guestName && (
+              <span style={{ color: "var(--accent-rose)", fontSize: 12 }}>{errors.guestName}</span>
+            )}
           </div>
           <div className="form-group">
             <label>Phone Number</label>
@@ -114,52 +201,34 @@ export default function BookingForm({ onSubmit, loading }) {
           </div>
         </div>
 
-        {/* ── Row 2: Dates & Guests ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px", marginBottom: "16px" }}>
-          <div className="form-group">
-            <label>Check-in Date *</label>
-            <input
-              type="date"
-              name="checkIn"
-              value={form.checkIn}
-              onChange={handleChange}
-              style={fieldStyle("checkIn")}
-            />
-            {errors.checkIn && <span style={{ color: "var(--accent-rose)", fontSize: 12 }}>{errors.checkIn}</span>}
-          </div>
-          <div className="form-group">
-            <label>Check-out Date *</label>
-            <input
-              type="date"
-              name="checkOut"
-              value={form.checkOut}
-              onChange={handleChange}
-              style={fieldStyle("checkOut")}
-            />
-            {errors.checkOut && <span style={{ color: "var(--accent-rose)", fontSize: 12 }}>{errors.checkOut}</span>}
-          </div>
-          <div className="form-group">
-            <label>Nights</label>
-            <input
-              value={nights ? `${nights} night${nights !== 1 ? "s" : ""}` : "—"}
-              readOnly
-              style={{ background: "var(--bg-secondary)", cursor: "default", color: "var(--accent-gold)" }}
-            />
-          </div>
-        </div>
-
-        {/* ── Row 3: Property & Guests Count ── */}
+        {/* ── Row 2: Property & Guests Count ── */}
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "16px", marginBottom: "16px" }}>
           <div className="form-group">
             <label>Property / Room Name *</label>
-            <input
+            <select
               name="property"
-              placeholder="e.g. Sea View Suite, Room 4"
               value={form.property}
               onChange={handleChange}
-              style={fieldStyle("property")}
-            />
-            {errors.property && <span style={{ color: "var(--accent-rose)", fontSize: 12 }}>{errors.property}</span>}
+              style={{
+                borderColor: overlapError ? "var(--accent-rose)" : undefined,
+              }}
+            >
+              {PROPERTIES.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.name}{p.noOverlap ? " 🔒" : ""}
+                </option>
+              ))}
+            </select>
+            {/* Show which mode is active */}
+            <span style={{
+              fontSize: 11,
+              color: isNoOverlap ? "var(--accent-teal)" : "var(--text-muted)",
+              marginTop: 2,
+            }}>
+              {isNoOverlap
+                ? "🔒 Overlap protection ON — cannot double-book this property"
+                : "✅ Overlap allowed — multiple bookings can share dates"}
+            </span>
           </div>
           <div className="form-group">
             <label>Number of Guests</label>
@@ -174,6 +243,86 @@ export default function BookingForm({ onSubmit, loading }) {
           </div>
         </div>
 
+        {/* ── Row 3: Dates ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px", marginBottom: "16px" }}>
+          <div className="form-group">
+            <label>Check-in Date *</label>
+            <input
+              type="date"
+              name="checkIn"
+              value={form.checkIn}
+              onChange={handleChange}
+              style={{
+                borderColor:
+                  errors.checkIn || overlapError ? "var(--accent-rose)" : undefined,
+              }}
+            />
+            {errors.checkIn && (
+              <span style={{ color: "var(--accent-rose)", fontSize: 12 }}>{errors.checkIn}</span>
+            )}
+          </div>
+          <div className="form-group">
+            <label>Check-out Date *</label>
+            <input
+              type="date"
+              name="checkOut"
+              value={form.checkOut}
+              onChange={handleChange}
+              style={{
+                borderColor:
+                  errors.checkOut || overlapError ? "var(--accent-rose)" : undefined,
+              }}
+            />
+            {errors.checkOut && (
+              <span style={{ color: "var(--accent-rose)", fontSize: 12 }}>{errors.checkOut}</span>
+            )}
+          </div>
+          <div className="form-group">
+            <label>Nights</label>
+            <input
+              value={nights ? `${nights} night${nights !== 1 ? "s" : ""}` : "—"}
+              readOnly
+              style={{
+                background: "var(--bg-secondary)",
+                cursor: "default",
+                color: "var(--accent-gold)",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* ── Overlap Error Banner ── */}
+        {overlapError && (
+          <div
+            style={{
+              background: "rgba(255,107,107,0.1)",
+              border: "1px solid rgba(255,107,107,0.4)",
+              borderRadius: "var(--radius-sm)",
+              color: "var(--accent-rose)",
+              fontSize: 13,
+              fontWeight: 500,
+              marginBottom: 16,
+              padding: "12px 16px",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+            }}
+          >
+            <span style={{ fontSize: 18, flexShrink: 0 }}>🚫</span>
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 2 }}>
+                This apartment is already reserved at this time
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.85 }}>
+                {overlapError.replace("🚫 This apartment is already reserved at this time. ", "")}
+              </div>
+              <div style={{ fontSize: 12, marginTop: 4, opacity: 0.7 }}>
+                Please choose different dates or select another property.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── Row 4: Pricing ── */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px", marginBottom: "16px" }}>
           <div className="form-group">
@@ -186,7 +335,9 @@ export default function BookingForm({ onSubmit, loading }) {
               onChange={handleChange}
               style={fieldStyle("totalPrice")}
             />
-            {errors.totalPrice && <span style={{ color: "var(--accent-rose)", fontSize: 12 }}>{errors.totalPrice}</span>}
+            {errors.totalPrice && (
+              <span style={{ color: "var(--accent-rose)", fontSize: 12 }}>{errors.totalPrice}</span>
+            )}
           </div>
           <div className="form-group">
             <label>Advance Paid (PKR)</label>
@@ -198,7 +349,9 @@ export default function BookingForm({ onSubmit, loading }) {
               onChange={handleChange}
               style={fieldStyle("advancePaid")}
             />
-            {errors.advancePaid && <span style={{ color: "var(--accent-rose)", fontSize: 12 }}>{errors.advancePaid}</span>}
+            {errors.advancePaid && (
+              <span style={{ color: "var(--accent-rose)", fontSize: 12 }}>{errors.advancePaid}</span>
+            )}
           </div>
           <div className="form-group">
             <label>Remaining Amount (Auto)</label>
@@ -238,7 +391,12 @@ export default function BookingForm({ onSubmit, loading }) {
 
         {/* ── Submit ── */}
         <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-          <button type="submit" className="btn btn-primary" disabled={loading} style={{ minWidth: 160 }}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={loading || !!overlapError}
+            style={{ minWidth: 160 }}
+          >
             {loading ? (
               <>
                 <span style={{ animation: "pulse 1s infinite" }}>⏳</span>
@@ -254,11 +412,18 @@ export default function BookingForm({ onSubmit, loading }) {
           <button
             type="button"
             className="btn btn-ghost"
-            onClick={() => setForm(EMPTY_FORM)}
+            onClick={() => { setForm(EMPTY_FORM); setErrors({}); setOverlapError(""); }}
             disabled={loading}
           >
             Clear
           </button>
+
+          {/* Remind user why button is disabled */}
+          {overlapError && (
+            <span style={{ color: "var(--accent-rose)", fontSize: 12 }}>
+              Fix the date conflict above to continue
+            </span>
+          )}
         </div>
       </form>
     </div>
