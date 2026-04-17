@@ -13,27 +13,20 @@ const EMPTY_FORM = {
   checkIn: "",
   checkOut: "",
   guests: 1,
-  property: "Icon 613",
+  property: "",  // Will be set to first property on render
   totalPrice: "",
   advancePaid: "",
   source: "WhatsApp",
   notes: "",
 };
 
-// ─── Properties configuration ─────────────────────────────────────────────────
-// noOverlap: true  → block bookings if dates clash
-// noOverlap: false → allow overlapping bookings freely
-const PROPERTIES = [
-  { name: "Icon 613",                noOverlap: true  },
-  { name: "Citysmart",               noOverlap: true  },
-  { name: "Gulberg Outsource",       noOverlap: false },
-  { name: "Bahria Enclave Outsource",noOverlap: false },
+// ─── Fallback properties (used only if API hasn't loaded yet) ────────────────
+const FALLBACK_PROPERTIES = [
+  { name: "Icon 613",                 noOverlap: true  },
+  { name: "Citysmart",                noOverlap: true  },
+  { name: "Gulberg Outsource",        noOverlap: false },
+  { name: "Bahria Enclave Outsource", noOverlap: false },
 ];
-
-// Properties that require overlap checking (for easy lookup)
-const OVERLAP_CHECKED = new Set(
-  PROPERTIES.filter((p) => p.noOverlap).map((p) => p.name)
-);
 
 const SOURCES = [
   "WhatsApp", "Phone Call", "Instagram",
@@ -53,7 +46,10 @@ function datesOverlap(existingCheckIn, existingCheckOut, newCheckIn, newCheckOut
   return nIn < eOut && nOut > eIn;
 }
 
-export default function BookingForm({ onSubmit, loading, existingBookings = [] }) {
+export default function BookingForm({ onSubmit, loading, existingBookings = [], dynamicProperties = [] }) {
+  // Use API properties if available, fall back to hardcoded ones
+  const PROPERTIES = dynamicProperties.length > 0 ? dynamicProperties : FALLBACK_PROPERTIES;
+  const OVERLAP_CHECKED = new Set(PROPERTIES.filter((p) => p.noOverlap).map((p) => p.name));
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
   const [overlapError, setOverlapError] = useState("");

@@ -423,3 +423,180 @@ app.listen(PORT, () => {
   console.log(`\n🏠 Airbnb Tracker Backend running on http://localhost:${PORT}`);
   console.log(`📊 Connected to Sheet ID: ${SPREADSHEET_ID || "NOT SET"}\n`);
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PROPERTIES ROUTES (Phase 5)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const PROPERTIES_SHEET = process.env.PROPERTIES_SHEET || "Properties";
+
+// ─── Ensure Properties sheet headers ─────────────────────────────────────────
+async function ensurePropertiesHeaders(sheets) {
+  const headers = [
+    "Property Name", "Description", "Photo URL",
+    "No Overlap", "Max Guests", "Price Per Night", "Created At"
+  ];
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${PROPERTIES_SHEET}!A1:G1`,
+    });
+    if (!res.data.values || res.data.values.length === 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${PROPERTIES_SHEET}!A1`,
+        valueInputOption: "RAW",
+        requestBody: { values: [headers] },
+      });
+    }
+  } catch (err) {
+    console.warn("Properties sheet header check failed:", err.message);
+  }
+}
+
+// ─── Find property row index ──────────────────────────────────────────────────
+async function findPropertyRow(sheets, name) {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${PROPERTIES_SHEET}!A:A`,
+  });
+  const rows = res.data.values || [];
+  return rows.findIndex((r) => r[0] === name);
+}
+
+// ─── GET /api/properties ──────────────────────────────────────────────────────
+app.get("/api/properties", async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    await ensurePropertiesHeaders(sheets);
+
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${PROPERTIES_SHEET}!A:G`,
+    });
+
+    const rows = response.data.values || [];
+    if (rows.length <= 1) return res.json({ success: true, properties: [] });
+
+    const properties = rows.slice(1).map((row) => ({
+      name:          row[0] || "",
+      description:   row[1] || "",
+      photoUrl:      row[2] || "",
+      noOverlap:     row[3] === "true" || row[3] === "TRUE",
+      maxGuests:     parseInt(row[4]) || 10,
+      pricePerNight: parseFloat(row[5]) || 0,
+      createdAt:     row[6] || "",
+    })).filter((p) => p.name);
+
+    res.json({ success: true, properties });
+  } catch (error) {
+    console.error("Error fetching properties:", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─── POST /api/properties ─────────────────────────────────────────────────────
+app.post("/api/properties", async (req, res) => {
+  try {
+    const { name, description, photoUrl, noOverlap, maxGuests, pricePerNight } = req.body;
+    if (!name) return res.status(400).json({ success: false, message: "Property name is required" });
+
+    const sheets = getSheetsClient();
+    await ensurePropertiesHeaders(sheets);
+
+    // Check for duplicate name
+    const existing = await findPropertyRow(sheets, name);
+    if (existing !== -1) {
+      return res.status(409).json({ success: false, message: "A property with this name already exists" });
+    }
+
+    const row = [
+      name, description || "", photoUrl || "",
+      noOverlap ? "true" : "false",
+      maxGuests || 10, pricePerNight || 0,
+      new Date().toISOString(),
+    ];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${PROPERTIES_SHEET}!A:G`,
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values: [row] },
+    });
+
+    await logActivity(sheets, {
+      action: "BOOKING_ADDED", bookingId: "", guestName: "",
+      details: `New property added: ${name}`,
+    });
+
+    res.json({ success: true, message: "Property added!", name });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─── PUT /api/properties/:name ────────────────────────────────────────────────
+app.put("/api/properties/:name", async (req, res) => {
+  try {
+    const oldName = decodeURIComponent(req.params.name);
+    const { name, description, photoUrl, noOverlap, maxGuests, pricePerNight } = req.body;
+
+    const sheets   = getSheetsClient();
+    const rowIndex = await findPropertyRow(sheets, oldName);
+
+    if (rowIndex === -1) {
+      return res.status(404).json({ success: false, message: "Property not found" });
+    }
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${PROPERTIES_SHEET}!A${rowIndex + 1}:F${rowIndex + 1}`,
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[
+          name || oldName, description || "", photoUrl || "",
+          noOverlap ? "true" : "false",
+          maxGuests || 10, pricePerNight || 0,
+        ]],
+      },
+    });
+
+    res.json({ success: true, message: "Property updated!" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─── DELETE /api/properties/:name ────────────────────────────────────────────
+app.delete("/api/properties/:name", async (req, res) => {
+  try {
+    const name   = decodeURIComponent(req.params.name);
+    const sheets = getSheetsClient();
+
+    const rowIndex = await findPropertyRow(sheets, name);
+    if (rowIndex === -1) {
+      return res.status(404).json({ success: false, message: "Property not found" });
+    }
+
+    // Get sheet numeric ID
+    const info    = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+    const sheet   = info.data.sheets.find((s) => s.properties.title === PROPERTIES_SHEET);
+    const sheetId = sheet?.properties?.sheetId ?? 1;
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: {
+        requests: [{
+          deleteDimension: {
+            range: { sheetId, dimension: "ROWS", startIndex: rowIndex, endIndex: rowIndex + 1 },
+          },
+        }],
+      },
+    });
+
+    res.json({ success: true, message: "Property deleted" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
