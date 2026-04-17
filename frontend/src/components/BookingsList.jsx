@@ -1,6 +1,6 @@
 /**
  * BookingsList.jsx
- * Displays all bookings in a table with filters, search, and delete.
+ * Displays all bookings in a table with filters, search, edit, and delete.
  * Highlights upcoming check-ins within 3 days.
  */
 import React, { useState, useMemo } from "react";
@@ -40,7 +40,7 @@ const isUpcomingSoon = (checkIn) => {
   return diff >= 0 && diff <= 3;
 };
 
-export default function BookingsList({ bookings, onDelete, deleteLoading }) {
+export default function BookingsList({ bookings, onDelete, deleteLoading, onEdit }) {
   const [search, setSearch] = useState("");
   const [filterProperty, setFilterProperty] = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
@@ -168,7 +168,7 @@ export default function BookingsList({ bookings, onDelete, deleteLoading }) {
             cursor: "pointer",
           }}
         >
-          {["All", "Upcoming", "Active", "Completed"].map((s) => (
+          {["All", "Upcoming", "Active", "Completed", "Cancelled"].map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
@@ -270,34 +270,36 @@ export default function BookingsList({ bookings, onDelete, deleteLoading }) {
                       </span>
                     </td>
                     <td style={{ padding: "12px 14px" }}>
-                      {confirmDelete === b.bookingId ? (
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <button
-                            className="btn btn-danger"
-                            onClick={handleDeleteConfirm}
-                            disabled={deleteLoading}
-                            style={{ padding: "4px 10px", fontSize: 12 }}
-                          >
-                            Yes
-                          </button>
-                          <button
-                            className="btn btn-ghost"
-                            onClick={() => setConfirmDelete(null)}
-                            style={{ padding: "4px 10px", fontSize: 12 }}
-                          >
-                            No
-                          </button>
-                        </div>
-                      ) : (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {/* Edit button */}
                         <button
                           className="btn btn-ghost"
-                          onClick={() => handleDeleteClick(b.bookingId)}
-                          style={{ padding: "4px 10px", fontSize: 12, color: "var(--text-muted)" }}
-                          title="Delete booking"
+                          onClick={() => onEdit && onEdit(b)}
+                          style={{ padding: "4px 10px", fontSize: 12 }}
+                          title="Edit booking"
                         >
-                          🗑️
+                          ✏️
                         </button>
-                      )}
+                        {/* Delete button */}
+                        {confirmDelete === b.bookingId ? (
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button className="btn btn-danger" onClick={handleDeleteConfirm}
+                              disabled={deleteLoading} style={{ padding: "4px 8px", fontSize: 12 }}>
+                              Yes
+                            </button>
+                            <button className="btn btn-ghost" onClick={() => setConfirmDelete(null)}
+                              style={{ padding: "4px 8px", fontSize: 12 }}>
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button className="btn btn-ghost" onClick={() => handleDeleteClick(b.bookingId)}
+                            style={{ padding: "4px 10px", fontSize: 12, color: "var(--text-muted)" }}
+                            title="Delete booking">
+                            🗑️
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
