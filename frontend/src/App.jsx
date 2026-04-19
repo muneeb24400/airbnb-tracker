@@ -35,18 +35,28 @@ export default function App() {
   const [invoiceBooking, setInvoiceBooking] = useState(null);
   const [viewProperty,   setViewProperty]   = useState(null);
   const [isLoggedIn,     setIsLoggedIn]     = useState(false);
+  const [currentUser,    setCurrentUser]    = useState("");   // logged-in username
+  const [currentRole,    setCurrentRole]    = useState("");   // "admin" | "user"
   const { toasts, addToast, removeToast }   = useToast();
 
   // ── Restore session ─────────────────────────────────────────────────────────
   useEffect(() => {
-    const token = sessionStorage.getItem("st_token");
+    const token    = sessionStorage.getItem("st_token");
+    const username = sessionStorage.getItem("st_username");
+    const role     = sessionStorage.getItem("st_role");
     if (token) {
       fetch(`${BASE_URL}/api/auth/verify`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       })
         .then((r) => r.json())
-        .then((d) => { if (d.success) setIsLoggedIn(true); })
+        .then((d) => {
+          if (d.success) {
+            setIsLoggedIn(true);
+            setCurrentUser(d.username || username || "");
+            setCurrentRole(d.role     || role     || "user");
+          }
+        })
         .catch(() => {});
     }
   }, []);
@@ -138,7 +148,12 @@ export default function App() {
   };
 
   const handleEditSaved = async (msg) => { addToast(msg, "success"); await loadBookings(); };
-  const handleLogout    = () => { sessionStorage.removeItem("st_token"); setIsLoggedIn(false); setBookings([]); };
+  const handleLogout    = () => {
+    sessionStorage.removeItem("st_token");
+    sessionStorage.removeItem("st_username");
+    sessionStorage.removeItem("st_role");
+    setIsLoggedIn(false); setCurrentUser(""); setCurrentRole(""); setBookings([]);
+  };
 
   const upcomingCount = bookings.filter((b) => {
     const diff = (new Date(b.checkIn) - new Date()) / (1000 * 60 * 60 * 24);
@@ -161,7 +176,11 @@ export default function App() {
     return (
       <>
         <Toast toasts={toasts} removeToast={removeToast} />
-        <Login onLogin={() => setIsLoggedIn(true)} />
+        <Login onLogin={(token, username, role) => {
+          setIsLoggedIn(true);
+          setCurrentUser(username || "");
+          setCurrentRole(role     || "user");
+        }} />
       </>
     );
   }
@@ -226,9 +245,34 @@ export default function App() {
             style={{ padding: "6px 10px", fontSize: 13, flexShrink: 0 }}>
             {fetchLoading ? <span style={{ animation: "pulse 1s infinite" }}>⏳</span> : "🔄"}
           </button>
-          <button className="btn btn-ghost" onClick={handleLogout}
-            style={{ padding: "6px 10px", fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}
-            title="Logout">🔓</button>
+
+          {/* User info + logout */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 7,
+              background: "var(--bg-secondary)", border: "1px solid var(--border)",
+              borderRadius: 8, padding: "5px 12px",
+            }}>
+              <span style={{ fontSize: 14 }}>
+                {currentRole === "admin" ? "👑" : "👤"}
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
+                {currentUser}
+              </span>
+              {currentRole === "admin" && (
+                <span style={{
+                  fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 4,
+                  background: "var(--accent-gold-dim)", color: "var(--accent-gold)",
+                  textTransform: "uppercase", letterSpacing: "0.06em",
+                }}>Admin</span>
+              )}
+            </div>
+            <button className="btn btn-ghost" onClick={handleLogout}
+              style={{ padding: "6px 10px", fontSize: 12, color: "var(--text-muted)" }}
+              title="Sign out">
+              🔓
+            </button>
+          </div>
         </div>
       </header>
 

@@ -142,32 +142,255 @@ async function getSheetId(sheets) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// AUTH ROUTES
+// MULTI-USER AUTH ROUTES
+// Users are stored in the "Users" tab in Google Sheets.
+// Passwords are hashed with SHA-256 (never stored as plain text).
 // ══════════════════════════════════════════════════════════════════════════════
 
-/**
- * POST /api/auth/login
- * Body: { password }
- * Returns a simple token (the hashed password match).
- * For simplicity we use a plaintext env password — good enough for solo use.
- */
-app.post("/api/auth/login", (req, res) => {
-  const { password } = req.body;
-  const APP_PASSWORD = process.env.APP_PASSWORD || "staytrack2024";
+const crypto = require("crypto");
+const USERS_SHEET = process.env.USERS_SHEET || "Users";
 
-  if (password === APP_PASSWORD) {
-    // Return a simple session token (timestamp-based, stored client-side)
-    const token = Buffer.from(`auth:${Date.now()}`).toString("base64");
-    return res.json({ success: true, token, message: "Login successful" });
+// ─── Hash password with SHA-256 ───────────────────────────────────────────────
+function hashPassword(password) {
+  return crypto.createHash("sha256").update(password + "staytrack_salt").digest("hex");
+}
+
+// ─── Generate session token ───────────────────────────────────────────────────
+function generateToken(username) {
+  const payload = `${username}:${Date.now()}:${Math.random()}`;
+  return Buffer.from(payload).toString("base64");
+}
+
+// ─── Ensure Users sheet headers ───────────────────────────────────────────────
+async function ensureUsersHeaders(sheets) {
+  const headers = ["Username", "Password Hash", "Role", "Created At", "Last Login"];
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${USERS_SHEET}!A1:E1`,
+    });
+    if (!res.data.values || res.data.values.length === 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${USERS_SHEET}!A1`,
+        valueInputOption: "RAW",
+        requestBody: { values: [headers] },
+      });
+    }
+  } catch (err) {
+    console.warn("Users sheet header check failed:", err.message);
   }
-  return res.status(401).json({ success: false, message: "Incorrect password" });
+}
+
+// ─── Get all users from sheet ─────────────────────────────────────────────────
+async function getAllUsers(sheets) {
+  await ensureUsersHeaders(sheets);
+  const res  = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${USERS_SHEET}!A:E`,
+  });
+  const rows = res.data.values || [];
+  if (rows.length <= 1) return [];
+  return rows.slice(1).map((row) => ({
+    username:     (row[0] || "").toLowerCase().trim(),
+    passwordHash: row[1] || "",
+    role:         row[2] || "user",
+    createdAt:    row[3] || "",
+    lastLogin:    row[4] || "",
+  }));
+}
+
+// ─── Update last login timestamp ──────────────────────────────────────────────
+async function updateLastLogin(sheets, username) {
+  try {
+    const res   = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID, range: `${USERS_SHEET}!A:A`,
+    });
+    const rows  = res.data.values || [];
+    const rowIdx = rows.findIndex((r) => (r[0] || "").toLowerCase() === username.toLowerCase());
+    if (rowIdx !== -1) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${USERS_SHEET}!E${rowIdx + 1}`,
+        valueInputOption: "RAW",
+        requestBody: { values: [[new Date().toISOString()]] },
+      });
+    }
+  } catch {}
+}
+
+// ─── In-memory token store (resets on server restart — acceptable for this use case) ──
+const activeSessions = new Map(); // token → { username, role, createdAt }
+
+// ─── POST /api/auth/register ──────────────────────────────────────────────────
+app.post("/api/auth/register", async (req, res) => {
+  try {
+    const { username, password, confirmPassword, adminCode } = req.body;
+
+    // Basic validation
+    if (!username || !password) {
+      return res.status(400).json({ success: false, message: "Username and password are required" });
+    }
+    if (username.length < 3) {
+      return res.status(400).json({ success: false, message: "Username must be at least 3 characters" });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ success: false, message: "Password must be at least 6 characters" });
+    }
+    if (password !== confirmPassword) {
+      return res.status(400).json({ success: false, message: "Passwords do not match" });
+    }
+
+    // Check for special characters in username
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      return res.status(400).json({ success: false, message: "Username can only contain letters, numbers and underscores" });
+    }
+
+    const sheets = getSheetsClient();
+    const users  = await getAllUsers(sheets);
+
+    // Check if username already exists
+    const exists = users.find((u) => u.username === username.toLowerCase().trim());
+    if (exists) {
+      return res.status(409).json({ success: false, message: "Username already taken. Please choose another." });
+    }
+
+    // Determine role — first user is always admin, others need admin code
+    let role = "user";
+    if (users.length === 0) {
+      role = "admin"; // First ever user becomes admin automatically
+    } else {
+      // Check admin code if provided
+      const ADMIN_CODE = process.env.ADMIN_CODE || "staytrack_admin";
+      if (adminCode && adminCode === ADMIN_CODE) role = "admin";
+    }
+
+    // Save new user to sheet
+    const passwordHash = hashPassword(password);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${USERS_SHEET}!A:E`,
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: {
+        values: [[
+          username.toLowerCase().trim(),
+          passwordHash,
+          role,
+          new Date().toISOString(),
+          "",
+        ]],
+      },
+    });
+
+    // Auto-login after registration
+    const token = generateToken(username);
+    activeSessions.set(token, {
+      username: username.toLowerCase().trim(),
+      role,
+      createdAt: Date.now(),
+    });
+
+    res.json({
+      success: true,
+      message: `Account created! Welcome, ${username} 🎉`,
+      token,
+      username: username.toLowerCase().trim(),
+      role,
+    });
+  } catch (error) {
+    console.error("Register error:", error.message);
+    res.status(500).json({ success: false, message: "Could not create account. Please try again." });
+  }
 });
 
-/** POST /api/auth/verify — check if a token is still valid (always true for simplicity) */
+// ─── POST /api/auth/login ─────────────────────────────────────────────────────
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ success: false, message: "Username and password are required" });
+    }
+
+    const sheets = getSheetsClient();
+    const users  = await getAllUsers(sheets);
+
+    // Find user
+    const user = users.find((u) => u.username === username.toLowerCase().trim());
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Username not found. Please check or create an account." });
+    }
+
+    // Verify password
+    const hash = hashPassword(password);
+    if (hash !== user.passwordHash) {
+      return res.status(401).json({ success: false, message: "Incorrect password. Please try again." });
+    }
+
+    // Create session token
+    const token = generateToken(username);
+    activeSessions.set(token, {
+      username: user.username,
+      role:     user.role,
+      createdAt: Date.now(),
+    });
+
+    // Update last login in background
+    updateLastLogin(sheets, user.username);
+
+    res.json({
+      success:  true,
+      token,
+      username: user.username,
+      role:     user.role,
+      message:  `Welcome back, ${user.username}!`,
+    });
+  } catch (error) {
+    console.error("Login error:", error.message);
+    res.status(500).json({ success: false, message: "Login failed. Please try again." });
+  }
+});
+
+// ─── POST /api/auth/verify ────────────────────────────────────────────────────
 app.post("/api/auth/verify", (req, res) => {
   const { token } = req.body;
-  if (token) return res.json({ success: true });
-  return res.status(401).json({ success: false });
+  if (!token) return res.status(401).json({ success: false });
+
+  const session = activeSessions.get(token);
+  if (!session) return res.status(401).json({ success: false, message: "Session expired" });
+
+  // Sessions expire after 24 hours
+  if (Date.now() - session.createdAt > 24 * 60 * 60 * 1000) {
+    activeSessions.delete(token);
+    return res.status(401).json({ success: false, message: "Session expired" });
+  }
+
+  res.json({ success: true, username: session.username, role: session.role });
+});
+
+// ─── POST /api/auth/logout ────────────────────────────────────────────────────
+app.post("/api/auth/logout", (req, res) => {
+  const { token } = req.body;
+  if (token) activeSessions.delete(token);
+  res.json({ success: true });
+});
+
+// ─── GET /api/auth/users ──────────────────────────────────────────────────────
+// Returns list of users (admin only — no passwords)
+app.get("/api/auth/users", async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    const users  = await getAllUsers(sheets);
+    res.json({
+      success: true,
+      users: users.map(({ username, role, createdAt, lastLogin }) => ({
+        username, role, createdAt, lastLogin,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
