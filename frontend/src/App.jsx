@@ -92,25 +92,49 @@ export default function App() {
     finally { setDeleteLoading(false); }
   };
 
-  // ─── Mark booking as Completed ──────────────────────────────────────────────
-  const handleCompleteBooking = async (bookingId) => {
+  // ─── Mark booking as Completed (with optional payment collection) ────────────
+  const handleCompleteBooking = async (bookingId, paymentReceived = 0, booking = {}) => {
     try {
-      const res  = await fetch(`${BASE_URL}/api/bookings/${bookingId}/status`, {
+      // Step 1 — update status to Completed
+      const statusRes = await fetch(`${BASE_URL}/api/bookings/${bookingId}/status`, {
         method:  "PATCH",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ status: "Completed" }),
       });
-      const data = await res.json();
-      if (data.success) {
-        addToast("Booking marked as Completed ✅", "success");
-        // Update locally without full reload for instant feedback
-        setBookings((prev) =>
-          prev.map((b) => b.bookingId === bookingId ? { ...b, status: "Completed" } : b)
+      if (!statusRes.ok) throw new Error("Status update failed");
+
+      // Step 2 — if payment was entered, update advance paid + remaining via edit
+      if (paymentReceived > 0) {
+        const newAdvance   = (parseFloat(booking.advancePaid) || 0) + paymentReceived;
+        const newRemaining = Math.max(0, (parseFloat(booking.totalPrice) || 0) - newAdvance);
+        await fetch(`${BASE_URL}/api/bookings/${bookingId}`, {
+          method:  "PUT",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            ...booking,
+            advancePaid: newAdvance,
+            remaining:   newRemaining,
+            status:      "Completed",
+          }),
+        });
+        // Update locally with new amounts
+        setBookings((prev) => prev.map((b) =>
+          b.bookingId === bookingId
+            ? { ...b, status: "Completed", advancePaid: newAdvance, remaining: newRemaining }
+            : b
+        ));
+        addToast(
+          `Booking completed! PKR ${paymentReceived.toLocaleString()} payment recorded ✅`,
+          "success"
         );
       } else {
-        addToast("Could not complete booking.", "error");
+        // No payment — just update status locally
+        setBookings((prev) => prev.map((b) =>
+          b.bookingId === bookingId ? { ...b, status: "Completed" } : b
+        ));
+        addToast("Booking marked as Completed ✅", "success");
       }
-    } catch { addToast("Network error. Please try again.", "error"); }
+    } catch { addToast("Could not complete booking. Please try again.", "error"); }
   };
 
   const handleEditSaved = async (msg) => { addToast(msg, "success"); await loadBookings(); };

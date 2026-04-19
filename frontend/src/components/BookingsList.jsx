@@ -48,6 +48,7 @@ export default function BookingsList({ bookings, onDelete, deleteLoading, onEdit
   const [sortDir, setSortDir] = useState("desc");
   const [confirmDelete,   setConfirmDelete]   = useState(null);
   const [confirmComplete, setConfirmComplete] = useState(null); // bookingId awaiting completion confirm
+  const [remainingInput,  setRemainingInput]  = useState("");   // payment amount entered before completing
 
   // ─── Unique properties for filter dropdown ──────────────────────────────────
   const properties = useMemo(() => {
@@ -321,37 +322,88 @@ export default function BookingsList({ bookings, onDelete, deleteLoading, onEdit
                     <td style={{ padding: "10px 14px" }}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 120 }}>
 
-                        {/* ── Complete Booking button ── */}
+                        {/* ── Complete Booking button / inline form ── */}
                         {!isComplete && !isCancelled && (
                           confirmComplete === b.bookingId ? (
-                            <div style={{ display: "flex", gap: 4 }}>
-                              <button
-                                className="btn"
-                                onClick={() => {
-                                  onComplete && onComplete(b.bookingId);
-                                  setConfirmComplete(null);
-                                }}
+                            // ── Inline payment collection form ──────────────
+                            <div style={{
+                              background: "rgba(81,207,102,0.06)",
+                              border: "1px solid rgba(81,207,102,0.25)",
+                              borderRadius: 8, padding: "8px 10px",
+                              display: "flex", flexDirection: "column", gap: 6,
+                            }}>
+                              <p style={{
+                                fontSize: 10, fontWeight: 700, color: "var(--accent-green)",
+                                textTransform: "uppercase", letterSpacing: "0.06em",
+                              }}>
+                                💵 Payment Received
+                              </p>
+                              {/* Show outstanding balance as hint */}
+                              {(b.remaining || 0) > 0 && (
+                                <p style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                                  Outstanding: {fmt(b.remaining)}
+                                </p>
+                              )}
+                              <input
+                                type="number"
+                                placeholder={`Enter amount (PKR)`}
+                                value={remainingInput}
+                                onChange={(e) => setRemainingInput(e.target.value)}
+                                autoFocus
                                 style={{
-                                  padding: "4px 10px", fontSize: 11, fontWeight: 700,
-                                  background: "rgba(81,207,102,0.15)",
-                                  border: "1px solid rgba(81,207,102,0.35)",
-                                  color: "var(--accent-green)",
+                                  background: "var(--bg-input)",
+                                  border: "1px solid rgba(81,207,102,0.4)",
+                                  borderRadius: 6, color: "var(--text-primary)",
+                                  fontFamily: "var(--font-body)",
+                                  fontSize: 12, padding: "5px 8px",
+                                  outline: "none", width: "100%",
                                 }}
-                              >
-                                ✅ Yes
-                              </button>
-                              <button
-                                className="btn btn-ghost"
-                                onClick={() => setConfirmComplete(null)}
-                                style={{ padding: "4px 8px", fontSize: 11 }}
-                              >
-                                No
-                              </button>
+                              />
+                              <div style={{ display: "flex", gap: 4 }}>
+                                <button
+                                  className="btn"
+                                  onClick={() => {
+                                    onComplete && onComplete(
+                                      b.bookingId,
+                                      parseFloat(remainingInput) || 0,
+                                      b
+                                    );
+                                    setConfirmComplete(null);
+                                    setRemainingInput("");
+                                  }}
+                                  style={{
+                                    flex: 1, padding: "5px 8px", fontSize: 11, fontWeight: 700,
+                                    background: "rgba(81,207,102,0.2)",
+                                    border: "1px solid rgba(81,207,102,0.4)",
+                                    color: "var(--accent-green)",
+                                  }}
+                                >
+                                  ✅ Confirm
+                                </button>
+                                <button
+                                  className="btn btn-ghost"
+                                  onClick={() => {
+                                    setConfirmComplete(null);
+                                    setRemainingInput("");
+                                  }}
+                                  style={{ padding: "5px 8px", fontSize: 11 }}
+                                >
+                                  ✕
+                                </button>
+                              </div>
                             </div>
                           ) : (
+                            // ── Initial Complete button ──────────────────────
                             <button
                               className="btn"
-                              onClick={() => setConfirmComplete(b.bookingId)}
+                              onClick={() => {
+                                setConfirmComplete(b.bookingId);
+                                setRemainingInput(
+                                  (b.remaining || 0) > 0
+                                    ? String(b.remaining)
+                                    : ""
+                                );
+                              }}
                               style={{
                                 padding: "5px 10px", fontSize: 11, fontWeight: 600,
                                 background: "rgba(81,207,102,0.1)",
