@@ -600,3 +600,212 @@ app.delete("/api/properties/:name", async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FINANCE ROUTES (Phase 6)
+// Expense tracking, payment reminders, currency rate
+// ══════════════════════════════════════════════════════════════════════════════
+
+const EXPENSES_SHEET = process.env.EXPENSES_SHEET || "Expenses";
+
+// ─── Ensure Expenses sheet headers ───────────────────────────────────────────
+async function ensureExpensesHeaders(sheets) {
+  const headers = [
+    "Expense ID", "Date", "Property", "Category",
+    "Description", "Amount (PKR)", "Created At"
+  ];
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${EXPENSES_SHEET}!A1:G1`,
+    });
+    if (!res.data.values || res.data.values.length === 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${EXPENSES_SHEET}!A1`,
+        valueInputOption: "RAW",
+        requestBody: { values: [headers] },
+      });
+    }
+  } catch (err) {
+    console.warn("Expenses header check failed:", err.message);
+  }
+}
+
+// ─── GET /api/expenses ────────────────────────────────────────────────────────
+app.get("/api/expenses", async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    await ensureExpensesHeaders(sheets);
+
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${EXPENSES_SHEET}!A:G`,
+    });
+
+    const rows = response.data.values || [];
+    if (rows.length <= 1) return res.json({ success: true, expenses: [] });
+
+    const expenses = rows.slice(1).map((row) => ({
+      expenseId:   row[0] || "",
+      date:        row[1] || "",
+      property:    row[2] || "",
+      category:    row[3] || "",
+      description: row[4] || "",
+      amount:      parseFloat(row[5]) || 0,
+      createdAt:   row[6] || "",
+    })).filter((e) => e.expenseId);
+
+    res.json({ success: true, expenses });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─── POST /api/expenses ───────────────────────────────────────────────────────
+app.post("/api/expenses", async (req, res) => {
+  try {
+    const { date, property, category, description, amount } = req.body;
+    if (!date || !property || !amount) {
+      return res.status(400).json({ success: false, message: "Date, property and amount are required" });
+    }
+
+    const sheets    = getSheetsClient();
+    await ensureExpensesHeaders(sheets);
+
+    const expenseId = `EX-${Date.now().toString(36).toUpperCase()}`;
+    const row = [
+      expenseId, date, property, category || "Other",
+      description || "", parseFloat(amount), new Date().toISOString(),
+    ];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${EXPENSES_SHEET}!A:G`,
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values: [row] },
+    });
+
+    await logActivity(sheets, {
+      action: "BOOKING_ADDED", bookingId: expenseId,
+      guestName: "", details: `Expense: ${category} for ${property} — PKR ${amount}`,
+    });
+
+    res.json({ success: true, message: "Expense logged!", expenseId });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─── DELETE /api/expenses/:id ─────────────────────────────────────────────────
+app.delete("/api/expenses/:id", async (req, res) => {
+  try {
+    const { id }   = req.params;
+    const sheets   = getSheetsClient();
+
+    const idRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${EXPENSES_SHEET}!A:A`,
+    });
+    const rows     = idRes.data.values || [];
+    const rowIndex = rows.findIndex((r) => r[0] === id);
+
+    if (rowIndex === -1) {
+      return res.status(404).json({ success: false, message: "Expense not found" });
+    }
+
+    const info    = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+    const sheet   = info.data.sheets.find((s) => s.properties.title === EXPENSES_SHEET);
+    const sheetId = sheet?.properties?.sheetId ?? 2;
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: {
+        requests: [{
+          deleteDimension: {
+            range: { sheetId, dimension: "ROWS", startIndex: rowIndex, endIndex: rowIndex + 1 },
+          },
+        }],
+      },
+    });
+
+    res.json({ success: true, message: "Expense deleted" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─── GET /api/currency ────────────────────────────────────────────────────────
+// Returns USD→PKR exchange rate (cached for 1 hour)
+let rateCache = { rate: 278, fetchedAt: 0 };
+
+app.get("/api/currency", async (req, res) => {
+  try {
+    const now = Date.now();
+    // Cache for 1 hour
+    if (now - rateCache.fetchedAt < 3600000) {
+      return res.json({ success: true, rate: rateCache.rate, cached: true });
+    }
+
+    // Try to fetch live rate
+    const response = await fetch(
+      "https://open.er-api.com/v6/latest/USD"
+    );
+    if (response.ok) {
+      const data  = await response.json();
+      const pkrRate = data?.rates?.PKR;
+      if (pkrRate) {
+        rateCache = { rate: pkrRate, fetchedAt: now };
+        return res.json({ success: true, rate: pkrRate, cached: false });
+      }
+    }
+    // Fall back to cached rate
+    res.json({ success: true, rate: rateCache.rate, cached: true });
+  } catch {
+    res.json({ success: true, rate: rateCache.rate, cached: true });
+  }
+});
+
+// ─── GET /api/bookings/:id/invoice ───────────────────────────────────────────
+// Returns full invoice data for a booking
+app.get("/api/bookings/:id/invoice", async (req, res) => {
+  try {
+    const { id }   = req.params;
+    const sheets   = getSheetsClient();
+
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!A:Q`,
+    });
+
+    const rows = response.data.values || [];
+    const row  = rows.find((r) => r[0] === id);
+
+    if (!row) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    const booking = {
+      bookingId:   row[0],
+      guestName:   row[1],
+      phone:       row[2],
+      checkIn:     row[3],
+      checkOut:    row[4],
+      nights:      row[5],
+      guests:      row[6],
+      property:    row[7],
+      totalPrice:  parseFloat(row[8])  || 0,
+      advancePaid: parseFloat(row[9])  || 0,
+      remaining:   parseFloat(row[10]) || 0,
+      source:      row[11],
+      notes:       row[12],
+      status:      row[13],
+      createdAt:   row[14],
+    };
+
+    res.json({ success: true, booking });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});

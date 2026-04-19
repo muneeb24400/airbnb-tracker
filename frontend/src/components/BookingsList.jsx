@@ -40,7 +40,7 @@ const isUpcomingSoon = (checkIn) => {
   return diff >= 0 && diff <= 3;
 };
 
-export default function BookingsList({ bookings, onDelete, deleteLoading, onEdit }) {
+export default function BookingsList({ bookings, onDelete, deleteLoading, onEdit, onInvoice }) {
   const [search, setSearch] = useState("");
   const [filterProperty, setFilterProperty] = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
@@ -271,6 +271,15 @@ export default function BookingsList({ bookings, onDelete, deleteLoading, onEdit
                     </td>
                     <td style={{ padding: "12px 14px" }}>
                       <div style={{ display: "flex", gap: 6 }}>
+                        {/* Invoice button */}
+                        <button
+                          className="btn btn-ghost"
+                          onClick={() => onInvoice && onInvoice(b)}
+                          style={{ padding: "4px 10px", fontSize: 12 }}
+                          title="Generate invoice"
+                        >
+                          🧾
+                        </button>
                         {/* Edit button */}
                         <button
                           className="btn btn-ghost"

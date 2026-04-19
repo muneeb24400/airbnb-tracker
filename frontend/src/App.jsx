@@ -1,6 +1,6 @@
 /**
  * App.jsx - Root component
- * Phase 5: Dynamic Properties, Per-Property Dashboard, Photos
+ * Phase 6: Finance tab (Payment Reminders, Expense Tracker, Invoice PDF, Currency)
  */
 import React, { useState, useCallback, useEffect } from "react";
 import BookingForm        from "./components/BookingForm";
@@ -12,6 +12,8 @@ import EditBookingModal   from "./components/EditBookingModal";
 import Login              from "./components/Login";
 import PropertiesManager  from "./components/PropertiesManager";
 import PropertyDashboard  from "./components/PropertyDashboard";
+import Finance            from "./components/Finance";
+import InvoiceModal       from "./components/InvoiceModal";
 import { Toast, useToast } from "./components/Toast";
 import { fetchBookings, addBooking, deleteBooking } from "./utils/api";
 import "./App.css";
@@ -19,19 +21,19 @@ import "./App.css";
 const BASE_URL = process.env.REACT_APP_API_URL || "";
 
 export default function App() {
-  const [bookings,        setBookings]        = useState([]);
-  const [properties,      setProperties]      = useState([]);
-  const [activeTab,       setActiveTab]       = useState("dashboard");
-  const [loading,         setLoading]         = useState(false);
-  const [fetchLoading,    setFetchLoading]    = useState(true);
-  const [deleteLoading,   setDeleteLoading]   = useState(false);
-  const [editBooking,     setEditBooking]     = useState(null);
-  const [viewProperty,    setViewProperty]    = useState(null); // per-property dashboard
-  const [editProperty,    setEditProperty]    = useState(null); // edit property from dashboard
-  const [isLoggedIn,      setIsLoggedIn]      = useState(false);
-  const { toasts, addToast, removeToast }     = useToast();
+  const [bookings,      setBookings]      = useState([]);
+  const [properties,    setProperties]    = useState([]);
+  const [activeTab,     setActiveTab]     = useState("dashboard");
+  const [loading,       setLoading]       = useState(false);
+  const [fetchLoading,  setFetchLoading]  = useState(true);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [editBooking,   setEditBooking]   = useState(null);
+  const [invoiceBooking, setInvoiceBooking] = useState(null);
+  const [viewProperty,  setViewProperty]  = useState(null);
+  const [isLoggedIn,    setIsLoggedIn]    = useState(false);
+  const { toasts, addToast, removeToast } = useToast();
 
-  // ─── Restore session ────────────────────────────────────────────────────────
+  // ── Restore session ─────────────────────────────────────────────────────────
   useEffect(() => {
     const token = sessionStorage.getItem("st_token");
     if (token) {
@@ -45,48 +47,35 @@ export default function App() {
     }
   }, []);
 
-  // ─── Load bookings ──────────────────────────────────────────────────────────
   const loadBookings = useCallback(async () => {
     setFetchLoading(true);
     try {
       const { bookings: data } = await fetchBookings();
       setBookings(data || []);
-    } catch {
-      addToast("Could not load bookings.", "error");
-    } finally {
-      setFetchLoading(false);
-    }
+    } catch { addToast("Could not load bookings.", "error"); }
+    finally { setFetchLoading(false); }
   }, []);
 
-  // ─── Load properties ────────────────────────────────────────────────────────
   const loadProperties = useCallback(async () => {
     try {
       const res  = await fetch(`${BASE_URL}/api/properties`);
       const data = await res.json();
       setProperties(data.properties || []);
-    } catch {
-      console.warn("Could not load properties");
-    }
+    } catch {}
   }, []);
 
   useEffect(() => {
     if (isLoggedIn) { loadBookings(); loadProperties(); }
   }, [isLoggedIn]);
 
-  // ─── Handlers ───────────────────────────────────────────────────────────────
   const handleAddBooking = async (formData, resetForm) => {
     setLoading(true);
     try {
       const result = await addBooking(formData);
       addToast(`Booking ${result.bookingId} added! 🎉`, "success");
-      resetForm();
-      await loadBookings();
-      setActiveTab("dashboard");
-    } catch (err) {
-      addToast(err.message || "Failed to add booking.", "error");
-    } finally {
-      setLoading(false);
-    }
+      resetForm(); await loadBookings(); setActiveTab("dashboard");
+    } catch (err) { addToast(err.message || "Failed to add booking.", "error"); }
+    finally { setLoading(false); }
   };
 
   const handleDeleteBooking = async (bookingId) => {
@@ -95,22 +84,17 @@ export default function App() {
       await deleteBooking(bookingId);
       addToast("Booking deleted.", "success");
       setBookings((prev) => prev.filter((b) => b.bookingId !== bookingId));
-    } catch {
-      addToast("Failed to delete booking.", "error");
-    } finally {
-      setDeleteLoading(false);
-    }
+    } catch { addToast("Failed to delete booking.", "error"); }
+    finally { setDeleteLoading(false); }
   };
 
   const handleEditSaved = async (message) => {
-    addToast(message, "success");
-    await loadBookings();
+    addToast(message, "success"); await loadBookings();
   };
 
   const handleLogout = () => {
     sessionStorage.removeItem("st_token");
-    setIsLoggedIn(false);
-    setBookings([]);
+    setIsLoggedIn(false); setBookings([]);
   };
 
   const upcomingCount = bookings.filter((b) => {
@@ -118,9 +102,14 @@ export default function App() {
     return diff >= 0 && diff <= 3 && b.status === "Upcoming";
   }).length;
 
+  const pendingCount = bookings.filter((b) =>
+    (b.remaining || 0) > 0 && b.status !== "Cancelled"
+  ).length;
+
   const TABS = [
     { key: "dashboard",  label: "Dashboard",    icon: "📊" },
     { key: "analytics",  label: "Analytics",    icon: "📈" },
+    { key: "finance",    label: "Finance",      icon: "💰" },
     { key: "properties", label: "Properties",   icon: "🏠" },
     { key: "activity",   label: "Activity Log", icon: "📜" },
     { key: "add",        label: "New Booking",  icon: "➕" },
@@ -139,27 +128,19 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "var(--bg-primary)" }}>
       <Toast toasts={toasts} removeToast={removeToast} />
 
-      {/* Modals */}
-      {editBooking && (
-        <EditBookingModal booking={editBooking}
-          onClose={() => setEditBooking(null)} onSaved={handleEditSaved} />
-      )}
-      {viewProperty && (
-        <PropertyDashboard
-          property={viewProperty}
-          allBookings={bookings}
-          onClose={() => setViewProperty(null)}
-          onEdit={(p) => { setViewProperty(null); setEditProperty(p);
-            setActiveTab("properties"); }}
-        />
-      )}
+      {editBooking   && <EditBookingModal booking={editBooking}
+        onClose={() => setEditBooking(null)} onSaved={handleEditSaved} />}
+      {invoiceBooking && <InvoiceModal booking={invoiceBooking}
+        onClose={() => setInvoiceBooking(null)} />}
+      {viewProperty  && <PropertyDashboard property={viewProperty}
+        allBookings={bookings} onClose={() => setViewProperty(null)}
+        onEdit={(p) => { setViewProperty(null); setActiveTab("properties"); }} />}
 
-      {/* ── Header ── */}
+      {/* Header */}
       <header style={{ background: "var(--bg-secondary)", borderBottom: "1px solid var(--border)",
         position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(12px)" }}>
         <div className="container" style={{ display: "flex", alignItems: "center",
-          padding: "0 24px", height: 64, gap: 12 }}>
-          {/* Logo */}
+          padding: "0 24px", height: 64, gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: "auto" }}>
             <div style={{ width: 36, height: 36, borderRadius: 10,
               background: "linear-gradient(135deg, var(--accent-gold), #b8922e)",
@@ -171,11 +152,10 @@ export default function App() {
             </div>
           </div>
 
-          {/* Nav */}
-          <nav style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          <nav style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
             {TABS.map((tab) => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key)} className="btn" style={{
-                padding: "7px 13px", fontSize: 13,
+                padding: "7px 12px", fontSize: 12,
                 background: activeTab === tab.key ? "var(--accent-gold-dim)" : "transparent",
                 border: activeTab === tab.key ? "1px solid var(--border-accent)" : "1px solid transparent",
                 color: activeTab === tab.key ? "var(--accent-gold)" : "var(--text-secondary)",
@@ -183,9 +163,15 @@ export default function App() {
               }}>
                 {tab.icon} {tab.label}
                 {tab.key === "dashboard" && upcomingCount > 0 && (
-                  <span style={{ marginLeft: 6, background: "var(--accent-rose)", color: "#fff",
-                    borderRadius: 99, fontSize: 10, padding: "1px 6px", fontWeight: 700 }}>
+                  <span style={{ marginLeft: 5, background: "var(--accent-rose)", color: "#fff",
+                    borderRadius: 99, fontSize: 10, padding: "1px 5px", fontWeight: 700 }}>
                     {upcomingCount}
+                  </span>
+                )}
+                {tab.key === "finance" && pendingCount > 0 && (
+                  <span style={{ marginLeft: 5, background: "var(--accent-gold)", color: "#0f0f1a",
+                    borderRadius: 99, fontSize: 10, padding: "1px 5px", fontWeight: 700 }}>
+                    {pendingCount}
                   </span>
                 )}
               </button>
@@ -193,17 +179,16 @@ export default function App() {
           </nav>
 
           <button className="btn btn-ghost" onClick={loadBookings} disabled={fetchLoading}
-            style={{ padding: "7px 12px", fontSize: 13 }} title="Refresh">
+            style={{ padding: "7px 10px", fontSize: 13 }}>
             {fetchLoading ? <span style={{ animation: "pulse 1s infinite" }}>⏳</span> : "🔄"}
           </button>
           <button className="btn btn-ghost" onClick={handleLogout}
-            style={{ padding: "7px 12px", fontSize: 13, color: "var(--text-muted)" }}>
-            🔓 Logout
+            style={{ padding: "7px 10px", fontSize: 12, color: "var(--text-muted)" }}>
+            🔓
           </button>
         </div>
       </header>
 
-      {/* ── Main ── */}
       <main className="container" style={{ padding: "32px 24px" }}>
 
         {activeTab === "dashboard" && (
@@ -222,7 +207,8 @@ export default function App() {
             {fetchLoading
               ? <div className="skeleton card" style={{ height: 300 }} />
               : <BookingsList bookings={bookings} onDelete={handleDeleteBooking}
-                  deleteLoading={deleteLoading} onEdit={(b) => setEditBooking(b)} />}
+                  deleteLoading={deleteLoading} onEdit={(b) => setEditBooking(b)}
+                  onInvoice={(b) => setInvoiceBooking(b)} />}
           </div>
         )}
 
@@ -230,12 +216,22 @@ export default function App() {
           <div>
             <div style={{ marginBottom: 24 }}>
               <h2 style={{ fontSize: 26, marginBottom: 4 }}>Analytics</h2>
-              <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
-                Revenue, occupancy rates, and booking trends
-              </p>
+              <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>Revenue, occupancy, and booking trends</p>
             </div>
             {fetchLoading ? <div className="skeleton card" style={{ height: 400 }} />
               : <Analytics bookings={bookings} />}
+          </div>
+        )}
+
+        {activeTab === "finance" && (
+          <div>
+            <div style={{ marginBottom: 24 }}>
+              <h2 style={{ fontSize: 26, marginBottom: 4 }}>Finance</h2>
+              <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
+                Payment reminders, expense tracking, and multi-currency support
+              </p>
+            </div>
+            <Finance bookings={bookings} properties={properties} />
           </div>
         )}
 
@@ -244,14 +240,12 @@ export default function App() {
             <div style={{ marginBottom: 24 }}>
               <h2 style={{ fontSize: 26, marginBottom: 4 }}>Properties</h2>
               <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
-                Manage your properties — add photos, set pricing, configure overlap rules
+                Manage properties — photos, pricing, overlap rules
               </p>
             </div>
             <PropertiesManager
               onViewDashboard={(p) => setViewProperty(p)}
               onToast={(msg, type) => addToast(msg, type)}
-              defaultEditProperty={editProperty}
-              onEditDone={() => setEditProperty(null)}
             />
           </div>
         )}
@@ -260,9 +254,7 @@ export default function App() {
           <div>
             <div style={{ marginBottom: 24 }}>
               <h2 style={{ fontSize: 26, marginBottom: 4 }}>Activity Log</h2>
-              <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
-                Full audit trail of every action
-              </p>
+              <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>Full audit trail of every action</p>
             </div>
             <ActivityLog />
           </div>
@@ -272,9 +264,7 @@ export default function App() {
           <div style={{ maxWidth: 860, margin: "0 auto" }}>
             <div style={{ marginBottom: 24 }}>
               <h2 style={{ fontSize: 26, marginBottom: 4 }}>Add New Booking</h2>
-              <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
-                Saved directly to your Google Sheet.
-              </p>
+              <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>Saved directly to your Google Sheet.</p>
             </div>
             <BookingForm onSubmit={handleAddBooking} loading={loading}
               existingBookings={bookings} dynamicProperties={properties} />
