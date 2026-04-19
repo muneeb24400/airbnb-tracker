@@ -9,6 +9,32 @@ import React, { useState, useEffect } from "react";
 const BASE_URL = process.env.REACT_APP_API_URL || "";
 
 // ─── Empty form state ─────────────────────────────────────────────────────────
+
+// ─── Compress & resize image to base64 ───────────────────────────────────────
+// Resizes to max 800px wide, compresses to ~75% quality (~30-60KB)
+function compressImage(file, maxWidth = 800, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let { width, height } = img;
+        if (width > maxWidth) { height = (height * maxWidth) / width; width = maxWidth; }
+        canvas.width  = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 const EMPTY_FORM = {
   name: "", description: "", photoUrl: "",
   noOverlap: false, maxGuests: 4, pricePerNight: "",
@@ -186,21 +212,63 @@ function PropertyFormModal({ property, onClose, onSaved }) {
           </div>
 
           <div className="form-group">
-            <label>Photo URL</label>
-            <input name="photoUrl" value={form.photoUrl} onChange={handleChange}
+            <label>Property Photo</label>
+            {/* Upload from device */}
+            <label htmlFor="photo-upload" style={{
+              display: "flex", alignItems: "center", gap: 10,
+              background: "var(--bg-input)", border: "1px dashed var(--border)",
+              borderRadius: "var(--radius-sm)", padding: "12px 14px",
+              cursor: "pointer", color: "var(--text-secondary)", fontSize: 13,
+              transition: "border-color 0.2s",
+            }}
+              onMouseEnter={(e) => e.currentTarget.style.borderColor = "var(--accent-gold)"}
+              onMouseLeave={(e) => e.currentTarget.style.borderColor = "var(--border)"}
+            >
+              <span style={{ fontSize: 20 }}>📷</span>
+              <span>Click to upload from device</span>
+              <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-muted)" }}>
+                JPG, PNG (auto-compressed)
+              </span>
+            </label>
+            <input
+              id="photo-upload"
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                try {
+                  const compressed = await compressImage(file);
+                  setForm((p) => ({ ...p, photoUrl: compressed }));
+                } catch { setError("Could not process image. Try a different file."); }
+              }}
+            />
+            {/* OR paste URL */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "6px 0" }}>
+              <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>or paste URL</span>
+              <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+            </div>
+            <input name="photoUrl"
+              value={form.photoUrl?.startsWith("data:") ? "" : (form.photoUrl || "")}
+              onChange={handleChange}
               placeholder="https://i.imgur.com/yourphoto.jpg" />
-            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              Upload your photo to <a href="https://imgur.com/upload" target="_blank" rel="noreferrer"
-                style={{ color: "var(--accent-gold)" }}>imgur.com</a> and paste the direct link here
-            </span>
-            {/* Photo preview */}
+            {/* Preview */}
             {form.photoUrl && (
-              <img src={form.photoUrl} alt="preview"
-                style={{ marginTop: 8, width: "100%", height: 120,
-                  objectFit: "cover", borderRadius: 8,
-                  border: "1px solid var(--border)" }}
-                onError={(e) => { e.target.style.display = "none"; }}
-              />
+              <div style={{ position: "relative", marginTop: 8 }}>
+                <img src={form.photoUrl} alt="preview"
+                  style={{ width: "100%", height: 130, objectFit: "cover",
+                    borderRadius: 8, border: "1px solid var(--border)" }}
+                  onError={(e) => { e.target.style.display = "none"; }}
+                />
+                <button
+                  onClick={() => setForm((p) => ({ ...p, photoUrl: "" }))}
+                  style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.6)",
+                    border: "none", color: "#fff", borderRadius: "50%", width: 24, height: 24,
+                    cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center",
+                    justifyContent: "center" }}>✕</button>
+              </div>
             )}
           </div>
 

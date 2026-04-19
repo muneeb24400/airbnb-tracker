@@ -1,6 +1,9 @@
 /**
  * App.jsx - Root component
- * Phase 6: Finance tab (Payment Reminders, Expense Tracker, Invoice PDF, Currency)
+ * New in this update:
+ * - Calendar view tab with property + source filters
+ * - Device photo upload in PropertiesManager
+ * - Enhanced remaining payment pill + invoice button in BookingsList
  */
 import React, { useState, useCallback, useEffect } from "react";
 import BookingForm        from "./components/BookingForm";
@@ -14,6 +17,7 @@ import PropertiesManager  from "./components/PropertiesManager";
 import PropertyDashboard  from "./components/PropertyDashboard";
 import Finance            from "./components/Finance";
 import InvoiceModal       from "./components/InvoiceModal";
+import CalendarView       from "./components/CalendarView";
 import { Toast, useToast } from "./components/Toast";
 import { fetchBookings, addBooking, deleteBooking } from "./utils/api";
 import "./App.css";
@@ -21,17 +25,17 @@ import "./App.css";
 const BASE_URL = process.env.REACT_APP_API_URL || "";
 
 export default function App() {
-  const [bookings,      setBookings]      = useState([]);
-  const [properties,    setProperties]    = useState([]);
-  const [activeTab,     setActiveTab]     = useState("dashboard");
-  const [loading,       setLoading]       = useState(false);
-  const [fetchLoading,  setFetchLoading]  = useState(true);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-  const [editBooking,   setEditBooking]   = useState(null);
+  const [bookings,       setBookings]       = useState([]);
+  const [properties,     setProperties]     = useState([]);
+  const [activeTab,      setActiveTab]      = useState("dashboard");
+  const [loading,        setLoading]        = useState(false);
+  const [fetchLoading,   setFetchLoading]   = useState(true);
+  const [deleteLoading,  setDeleteLoading]  = useState(false);
+  const [editBooking,    setEditBooking]    = useState(null);
   const [invoiceBooking, setInvoiceBooking] = useState(null);
-  const [viewProperty,  setViewProperty]  = useState(null);
-  const [isLoggedIn,    setIsLoggedIn]    = useState(false);
-  const { toasts, addToast, removeToast } = useToast();
+  const [viewProperty,   setViewProperty]   = useState(null);
+  const [isLoggedIn,     setIsLoggedIn]     = useState(false);
+  const { toasts, addToast, removeToast }   = useToast();
 
   // ── Restore session ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -88,26 +92,19 @@ export default function App() {
     finally { setDeleteLoading(false); }
   };
 
-  const handleEditSaved = async (message) => {
-    addToast(message, "success"); await loadBookings();
-  };
-
-  const handleLogout = () => {
-    sessionStorage.removeItem("st_token");
-    setIsLoggedIn(false); setBookings([]);
-  };
+  const handleEditSaved = async (msg) => { addToast(msg, "success"); await loadBookings(); };
+  const handleLogout    = () => { sessionStorage.removeItem("st_token"); setIsLoggedIn(false); setBookings([]); };
 
   const upcomingCount = bookings.filter((b) => {
     const diff = (new Date(b.checkIn) - new Date()) / (1000 * 60 * 60 * 24);
     return diff >= 0 && diff <= 3 && b.status === "Upcoming";
   }).length;
 
-  const pendingCount = bookings.filter((b) =>
-    (b.remaining || 0) > 0 && b.status !== "Cancelled"
-  ).length;
+  const pendingCount = bookings.filter((b) => (b.remaining || 0) > 0 && b.status !== "Cancelled").length;
 
   const TABS = [
     { key: "dashboard",  label: "Dashboard",    icon: "📊" },
+    { key: "calendar",   label: "Calendar",     icon: "📅" },
     { key: "analytics",  label: "Analytics",    icon: "📈" },
     { key: "finance",    label: "Finance",      icon: "💰" },
     { key: "properties", label: "Properties",   icon: "🏠" },
@@ -128,34 +125,36 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "var(--bg-primary)" }}>
       <Toast toasts={toasts} removeToast={removeToast} />
 
-      {editBooking   && <EditBookingModal booking={editBooking}
+      {editBooking    && <EditBookingModal booking={editBooking}
         onClose={() => setEditBooking(null)} onSaved={handleEditSaved} />}
       {invoiceBooking && <InvoiceModal booking={invoiceBooking}
         onClose={() => setInvoiceBooking(null)} />}
-      {viewProperty  && <PropertyDashboard property={viewProperty}
+      {viewProperty   && <PropertyDashboard property={viewProperty}
         allBookings={bookings} onClose={() => setViewProperty(null)}
-        onEdit={(p) => { setViewProperty(null); setActiveTab("properties"); }} />}
+        onEdit={() => { setViewProperty(null); setActiveTab("properties"); }} />}
 
-      {/* Header */}
+      {/* ── Header ── */}
       <header style={{ background: "var(--bg-secondary)", borderBottom: "1px solid var(--border)",
         position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(12px)" }}>
         <div className="container" style={{ display: "flex", alignItems: "center",
-          padding: "0 24px", height: 64, gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: "auto" }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10,
+          padding: "0 20px", height: 64, gap: 8 }}>
+          {/* Logo */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: "auto", flexShrink: 0 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 9,
               background: "linear-gradient(135deg, var(--accent-gold), #b8922e)",
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏠</div>
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>🏠</div>
             <div>
-              <h1 style={{ fontSize: 17, fontFamily: "var(--font-display)", fontWeight: 600 }}>StayTrack</h1>
-              <p style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em",
-                textTransform: "uppercase", marginTop: -2 }}>Booking Manager</p>
+              <h1 style={{ fontSize: 16, fontFamily: "var(--font-display)", fontWeight: 600 }}>StayTrack</h1>
+              <p style={{ fontSize: 9, color: "var(--text-muted)", letterSpacing: "0.08em",
+                textTransform: "uppercase", marginTop: -1 }}>Booking Manager</p>
             </div>
           </div>
 
-          <nav style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+          {/* Nav */}
+          <nav style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
             {TABS.map((tab) => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key)} className="btn" style={{
-                padding: "7px 12px", fontSize: 12,
+                padding: "6px 11px", fontSize: 12,
                 background: activeTab === tab.key ? "var(--accent-gold-dim)" : "transparent",
                 border: activeTab === tab.key ? "1px solid var(--border-accent)" : "1px solid transparent",
                 color: activeTab === tab.key ? "var(--accent-gold)" : "var(--text-secondary)",
@@ -163,14 +162,14 @@ export default function App() {
               }}>
                 {tab.icon} {tab.label}
                 {tab.key === "dashboard" && upcomingCount > 0 && (
-                  <span style={{ marginLeft: 5, background: "var(--accent-rose)", color: "#fff",
-                    borderRadius: 99, fontSize: 10, padding: "1px 5px", fontWeight: 700 }}>
+                  <span style={{ marginLeft: 4, background: "var(--accent-rose)", color: "#fff",
+                    borderRadius: 99, fontSize: 9, padding: "1px 5px", fontWeight: 700 }}>
                     {upcomingCount}
                   </span>
                 )}
                 {tab.key === "finance" && pendingCount > 0 && (
-                  <span style={{ marginLeft: 5, background: "var(--accent-gold)", color: "#0f0f1a",
-                    borderRadius: 99, fontSize: 10, padding: "1px 5px", fontWeight: 700 }}>
+                  <span style={{ marginLeft: 4, background: "var(--accent-gold)", color: "#0f0f1a",
+                    borderRadius: 99, fontSize: 9, padding: "1px 5px", fontWeight: 700 }}>
                     {pendingCount}
                   </span>
                 )}
@@ -179,21 +178,22 @@ export default function App() {
           </nav>
 
           <button className="btn btn-ghost" onClick={loadBookings} disabled={fetchLoading}
-            style={{ padding: "7px 10px", fontSize: 13 }}>
+            style={{ padding: "6px 10px", fontSize: 13, flexShrink: 0 }}>
             {fetchLoading ? <span style={{ animation: "pulse 1s infinite" }}>⏳</span> : "🔄"}
           </button>
           <button className="btn btn-ghost" onClick={handleLogout}
-            style={{ padding: "7px 10px", fontSize: 12, color: "var(--text-muted)" }}>
-            🔓
-          </button>
+            style={{ padding: "6px 10px", fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}
+            title="Logout">🔓</button>
         </div>
       </header>
 
-      <main className="container" style={{ padding: "32px 24px" }}>
+      {/* ── Main ── */}
+      <main className="container" style={{ padding: "28px 24px" }}>
 
+        {/* Dashboard */}
         {activeTab === "dashboard" && (
           <div>
-            <div style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 22 }}>
               <h2 style={{ fontSize: 26, marginBottom: 4 }}>Overview</h2>
               <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
                 {new Date().toLocaleDateString("en-PK", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
@@ -212,9 +212,25 @@ export default function App() {
           </div>
         )}
 
+        {/* Calendar */}
+        {activeTab === "calendar" && (
+          <div>
+            <div style={{ marginBottom: 22 }}>
+              <h2 style={{ fontSize: 26, marginBottom: 4 }}>Calendar</h2>
+              <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
+                Visual overview of all bookings — filter by property or source
+              </p>
+            </div>
+            {fetchLoading
+              ? <div className="skeleton card" style={{ height: 500 }} />
+              : <CalendarView bookings={bookings} onInvoice={(b) => setInvoiceBooking(b)} />}
+          </div>
+        )}
+
+        {/* Analytics */}
         {activeTab === "analytics" && (
           <div>
-            <div style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 22 }}>
               <h2 style={{ fontSize: 26, marginBottom: 4 }}>Analytics</h2>
               <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>Revenue, occupancy, and booking trends</p>
             </div>
@@ -223,9 +239,10 @@ export default function App() {
           </div>
         )}
 
+        {/* Finance */}
         {activeTab === "finance" && (
           <div>
-            <div style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 22 }}>
               <h2 style={{ fontSize: 26, marginBottom: 4 }}>Finance</h2>
               <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
                 Payment reminders, expense tracking, and multi-currency support
@@ -235,12 +252,13 @@ export default function App() {
           </div>
         )}
 
+        {/* Properties */}
         {activeTab === "properties" && (
           <div>
-            <div style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 22 }}>
               <h2 style={{ fontSize: 26, marginBottom: 4 }}>Properties</h2>
               <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
-                Manage properties — photos, pricing, overlap rules
+                Manage properties — upload photos, set pricing, configure overlap rules
               </p>
             </div>
             <PropertiesManager
@@ -250,9 +268,10 @@ export default function App() {
           </div>
         )}
 
+        {/* Activity Log */}
         {activeTab === "activity" && (
           <div>
-            <div style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 22 }}>
               <h2 style={{ fontSize: 26, marginBottom: 4 }}>Activity Log</h2>
               <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>Full audit trail of every action</p>
             </div>
@@ -260,9 +279,10 @@ export default function App() {
           </div>
         )}
 
+        {/* Add Booking */}
         {activeTab === "add" && (
           <div style={{ maxWidth: 860, margin: "0 auto" }}>
-            <div style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 22 }}>
               <h2 style={{ fontSize: 26, marginBottom: 4 }}>Add New Booking</h2>
               <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>Saved directly to your Google Sheet.</p>
             </div>
@@ -272,7 +292,7 @@ export default function App() {
         )}
       </main>
 
-      <footer style={{ padding: "20px 24px", textAlign: "center", color: "var(--text-muted)",
+      <footer style={{ padding: "18px 24px", textAlign: "center", color: "var(--text-muted)",
         fontSize: 12, borderTop: "1px solid var(--border)", marginTop: 40 }}>
         StayTrack — Built for Airbnb hosts ·{" "}
         <span style={{ color: "var(--accent-gold-light)" }}>Synced to Google Sheets</span>

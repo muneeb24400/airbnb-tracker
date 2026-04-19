@@ -258,8 +258,17 @@ export default function BookingsList({ bookings, onDelete, deleteLoading, onEdit
                     <td style={{ padding: "12px 14px", color: "var(--text-muted)", textAlign: "center" }}>{b.nights}</td>
                     <td style={{ padding: "12px 14px", color: "var(--accent-gold)", fontWeight: 500 }}>{fmt(b.totalPrice)}</td>
                     <td style={{ padding: "12px 14px", color: "var(--accent-green)" }}>{fmt(b.advancePaid)}</td>
-                    <td style={{ padding: "12px 14px", color: b.remaining > 0 ? "var(--accent-rose)" : "var(--text-muted)", fontWeight: b.remaining > 0 ? 600 : 400 }}>
-                      {fmt(b.remaining)}
+                    <td style={{ padding: "12px 14px" }}>
+                      <div style={{
+                        display: "inline-flex", alignItems: "center", gap: 5,
+                        background: b.remaining > 0 ? "rgba(255,107,107,0.12)" : "rgba(81,207,102,0.1)",
+                        border: `1px solid ${b.remaining > 0 ? "rgba(255,107,107,0.25)" : "rgba(81,207,102,0.2)"}`,
+                        borderRadius: 99, padding: "3px 10px", fontSize: 12, fontWeight: 700,
+                        color: b.remaining > 0 ? "var(--accent-rose)" : "var(--accent-green)",
+                        whiteSpace: "nowrap",
+                      }}>
+                        {b.remaining > 0 ? "⏳" : "✅"} {fmt(b.remaining)}
+                      </div>
                     </td>
                     <td style={{ padding: "12px 14px", color: "var(--text-secondary)" }}>
                       {SOURCE_ICONS[b.source] || "📝"} {b.source}
