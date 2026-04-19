@@ -4,7 +4,7 @@
  * Icon 613 and Citysmart block overlapping bookings.
  * Gulberg Outsource and Bahria Enclave allow overlapping bookings.
  */
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 // ─── Initial empty form state ─────────────────────────────────────────────────
 const EMPTY_FORM = {
@@ -53,6 +53,14 @@ export default function BookingForm({ onSubmit, loading, existingBookings = [], 
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
   const [overlapError, setOverlapError] = useState("");
+
+  // ─── Auto-set property to first option when properties load ────────────────
+  // Fixes: form state has property="" on init, but dropdown shows first item
+  useEffect(() => {
+    if (PROPERTIES.length > 0 && !form.property) {
+      setForm((prev) => ({ ...prev, property: PROPERTIES[0].name }));
+    }
+  }, [PROPERTIES.length]);
 
   // ─── Auto-calculate remaining amount ───────────────────────────────────────
   const remaining =
@@ -133,6 +141,16 @@ export default function BookingForm({ onSubmit, loading, existingBookings = [], 
   const handleSubmit = (e) => {
     e.preventDefault();
 
+    // Safety: ensure property is set (fallback to first in list)
+    const finalForm = {
+      ...form,
+      property: form.property || (PROPERTIES[0]?.name ?? ""),
+    };
+    if (!finalForm.property) {
+      setErrors((prev) => ({ ...prev, property: "Please select a property" }));
+      return;
+    }
+
     // Run field validation
     const validationErrors = validate();
     if (Object.keys(validationErrors).length > 0) {
@@ -141,11 +159,11 @@ export default function BookingForm({ onSubmit, loading, existingBookings = [], 
     }
 
     // Run overlap check one final time before submitting
-    const hasOverlap = checkOverlap(form.property, form.checkIn, form.checkOut);
+    const hasOverlap = checkOverlap(finalForm.property, finalForm.checkIn, finalForm.checkOut);
     if (hasOverlap) return; // Stop — overlap error is already shown
 
-    onSubmit(form, () => {
-      setForm(EMPTY_FORM);
+    onSubmit(finalForm, () => {
+      setForm({ ...EMPTY_FORM, property: PROPERTIES[0]?.name || "" });
       setOverlapError("");
     });
   };
