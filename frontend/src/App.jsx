@@ -92,6 +92,27 @@ export default function App() {
     finally { setDeleteLoading(false); }
   };
 
+  // ─── Mark booking as Completed ──────────────────────────────────────────────
+  const handleCompleteBooking = async (bookingId) => {
+    try {
+      const res  = await fetch(`${BASE_URL}/api/bookings/${bookingId}/status`, {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ status: "Completed" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        addToast("Booking marked as Completed ✅", "success");
+        // Update locally without full reload for instant feedback
+        setBookings((prev) =>
+          prev.map((b) => b.bookingId === bookingId ? { ...b, status: "Completed" } : b)
+        );
+      } else {
+        addToast("Could not complete booking.", "error");
+      }
+    } catch { addToast("Network error. Please try again.", "error"); }
+  };
+
   const handleEditSaved = async (msg) => { addToast(msg, "success"); await loadBookings(); };
   const handleLogout    = () => { sessionStorage.removeItem("st_token"); setIsLoggedIn(false); setBookings([]); };
 
@@ -208,7 +229,8 @@ export default function App() {
               ? <div className="skeleton card" style={{ height: 300 }} />
               : <BookingsList bookings={bookings} onDelete={handleDeleteBooking}
                   deleteLoading={deleteLoading} onEdit={(b) => setEditBooking(b)}
-                  onInvoice={(b) => setInvoiceBooking(b)} />}
+                  onInvoice={(b) => setInvoiceBooking(b)}
+                  onComplete={handleCompleteBooking} />}
           </div>
         )}
 

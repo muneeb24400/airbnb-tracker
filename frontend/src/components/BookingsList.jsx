@@ -40,13 +40,14 @@ const isUpcomingSoon = (checkIn) => {
   return diff >= 0 && diff <= 3;
 };
 
-export default function BookingsList({ bookings, onDelete, deleteLoading, onEdit, onInvoice }) {
+export default function BookingsList({ bookings, onDelete, deleteLoading, onEdit, onInvoice, onComplete }) {
   const [search, setSearch] = useState("");
   const [filterProperty, setFilterProperty] = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
   const [sortField, setSortField] = useState("checkIn");
   const [sortDir, setSortDir] = useState("desc");
-  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [confirmDelete,   setConfirmDelete]   = useState(null);
+  const [confirmComplete, setConfirmComplete] = useState(null); // bookingId awaiting completion confirm
 
   // ─── Unique properties for filter dropdown ──────────────────────────────────
   const properties = useMemo(() => {
@@ -231,7 +232,10 @@ export default function BookingsList({ bookings, onDelete, deleteLoading, onEdit
             </thead>
             <tbody>
               {filtered.map((b, i) => {
-                const soon = isUpcomingSoon(b.checkIn) && b.status === "Upcoming";
+                const soon       = isUpcomingSoon(b.checkIn) && b.status === "Upcoming";
+                const isComplete = b.status === "Completed";
+                const isCancelled = b.status === "Cancelled";
+
                 return (
                   <tr
                     key={b.bookingId || i}
@@ -243,80 +247,166 @@ export default function BookingsList({ bookings, onDelete, deleteLoading, onEdit
                     onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-card-hover)")}
                     onMouseLeave={(e) => (e.currentTarget.style.background = soon ? "rgba(212, 168, 83, 0.04)" : "transparent")}
                   >
+                    {/* Guest */}
                     <td style={{ padding: "12px 14px" }}>
                       <div style={{ fontWeight: 500, color: "var(--text-primary)" }}>{b.guestName}</div>
                       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>{b.phone}</div>
                     </td>
+
+                    {/* Property */}
                     <td style={{ padding: "12px 14px", color: "var(--text-secondary)" }}>{b.property}</td>
+
+                    {/* Check-in */}
                     <td style={{ padding: "12px 14px" }}>
                       <span style={{ color: soon ? "var(--accent-gold)" : "var(--text-primary)" }}>
-                        {fmtDate(b.checkIn)}
-                        {soon && " 🔔"}
+                        {fmtDate(b.checkIn)}{soon && " 🔔"}
                       </span>
                     </td>
+
+                    {/* Check-out */}
                     <td style={{ padding: "12px 14px", color: "var(--text-secondary)" }}>{fmtDate(b.checkOut)}</td>
+
+                    {/* Nights */}
                     <td style={{ padding: "12px 14px", color: "var(--text-muted)", textAlign: "center" }}>{b.nights}</td>
+
+                    {/* Total */}
                     <td style={{ padding: "12px 14px", color: "var(--accent-gold)", fontWeight: 500 }}>{fmt(b.totalPrice)}</td>
+
+                    {/* Advance */}
                     <td style={{ padding: "12px 14px", color: "var(--accent-green)" }}>{fmt(b.advancePaid)}</td>
-                    <td style={{ padding: "12px 14px" }}>
+
+                    {/* ── Remaining Payment Box ── */}
+                    <td style={{ padding: "10px 14px" }}>
                       <div style={{
-                        display: "inline-flex", alignItems: "center", gap: 5,
-                        background: b.remaining > 0 ? "rgba(255,107,107,0.12)" : "rgba(81,207,102,0.1)",
-                        border: `1px solid ${b.remaining > 0 ? "rgba(255,107,107,0.25)" : "rgba(81,207,102,0.2)"}`,
-                        borderRadius: 99, padding: "3px 10px", fontSize: 12, fontWeight: 700,
-                        color: b.remaining > 0 ? "var(--accent-rose)" : "var(--accent-green)",
-                        whiteSpace: "nowrap",
+                        background: b.remaining > 0
+                          ? "rgba(255,107,107,0.1)"
+                          : "rgba(81,207,102,0.08)",
+                        border: `1px solid ${b.remaining > 0
+                          ? "rgba(255,107,107,0.3)"
+                          : "rgba(81,207,102,0.25)"}`,
+                        borderRadius: 8,
+                        padding: "6px 10px",
+                        minWidth: 100,
                       }}>
-                        {b.remaining > 0 ? "⏳" : "✅"} {fmt(b.remaining)}
+                        <div style={{
+                          fontSize: 9, fontWeight: 700, letterSpacing: "0.07em",
+                          textTransform: "uppercase",
+                          color: b.remaining > 0 ? "rgba(255,107,107,0.7)" : "rgba(81,207,102,0.7)",
+                          marginBottom: 2,
+                        }}>
+                          {b.remaining > 0 ? "⏳ Remaining" : "✅ Fully Paid"}
+                        </div>
+                        <div style={{
+                          fontSize: 13, fontWeight: 700,
+                          color: b.remaining > 0 ? "var(--accent-rose)" : "var(--accent-green)",
+                        }}>
+                          {fmt(b.remaining)}
+                        </div>
                       </div>
                     </td>
+
+                    {/* Source */}
                     <td style={{ padding: "12px 14px", color: "var(--text-secondary)" }}>
                       {SOURCE_ICONS[b.source] || "📝"} {b.source}
                     </td>
+
+                    {/* Status badge */}
                     <td style={{ padding: "12px 14px" }}>
                       <span className={`badge badge-${(b.status || "upcoming").toLowerCase()}`}>
                         {b.status}
                       </span>
                     </td>
-                    <td style={{ padding: "12px 14px" }}>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        {/* Invoice button */}
-                        <button
-                          className="btn btn-ghost"
-                          onClick={() => onInvoice && onInvoice(b)}
-                          style={{ padding: "4px 10px", fontSize: 12 }}
-                          title="Generate invoice"
-                        >
-                          🧾
-                        </button>
-                        {/* Edit button */}
-                        <button
-                          className="btn btn-ghost"
-                          onClick={() => onEdit && onEdit(b)}
-                          style={{ padding: "4px 10px", fontSize: 12 }}
-                          title="Edit booking"
-                        >
-                          ✏️
-                        </button>
-                        {/* Delete button */}
-                        {confirmDelete === b.bookingId ? (
-                          <div style={{ display: "flex", gap: 4 }}>
-                            <button className="btn btn-danger" onClick={handleDeleteConfirm}
-                              disabled={deleteLoading} style={{ padding: "4px 8px", fontSize: 12 }}>
-                              Yes
+
+                    {/* ── Actions ── */}
+                    <td style={{ padding: "10px 14px" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 120 }}>
+
+                        {/* ── Complete Booking button ── */}
+                        {!isComplete && !isCancelled && (
+                          confirmComplete === b.bookingId ? (
+                            <div style={{ display: "flex", gap: 4 }}>
+                              <button
+                                className="btn"
+                                onClick={() => {
+                                  onComplete && onComplete(b.bookingId);
+                                  setConfirmComplete(null);
+                                }}
+                                style={{
+                                  padding: "4px 10px", fontSize: 11, fontWeight: 700,
+                                  background: "rgba(81,207,102,0.15)",
+                                  border: "1px solid rgba(81,207,102,0.35)",
+                                  color: "var(--accent-green)",
+                                }}
+                              >
+                                ✅ Yes
+                              </button>
+                              <button
+                                className="btn btn-ghost"
+                                onClick={() => setConfirmComplete(null)}
+                                style={{ padding: "4px 8px", fontSize: 11 }}
+                              >
+                                No
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              className="btn"
+                              onClick={() => setConfirmComplete(b.bookingId)}
+                              style={{
+                                padding: "5px 10px", fontSize: 11, fontWeight: 600,
+                                background: "rgba(81,207,102,0.1)",
+                                border: "1px solid rgba(81,207,102,0.25)",
+                                color: "var(--accent-green)",
+                                width: "100%",
+                              }}
+                              title="Mark as completed"
+                            >
+                              ✅ Complete
                             </button>
-                            <button className="btn btn-ghost" onClick={() => setConfirmDelete(null)}
-                              style={{ padding: "4px 8px", fontSize: 12 }}>
-                              No
-                            </button>
-                          </div>
-                        ) : (
-                          <button className="btn btn-ghost" onClick={() => handleDeleteClick(b.bookingId)}
-                            style={{ padding: "4px 10px", fontSize: 12, color: "var(--text-muted)" }}
-                            title="Delete booking">
-                            🗑️
-                          </button>
+                          )
                         )}
+
+                        {/* Row 2: Invoice + Edit + Delete */}
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button
+                            className="btn btn-ghost"
+                            onClick={() => onInvoice && onInvoice(b)}
+                            style={{ padding: "4px 8px", fontSize: 12, flex: 1 }}
+                            title="Generate invoice"
+                          >
+                            🧾
+                          </button>
+                          <button
+                            className="btn btn-ghost"
+                            onClick={() => onEdit && onEdit(b)}
+                            style={{ padding: "4px 8px", fontSize: 12, flex: 1 }}
+                            title="Edit booking"
+                          >
+                            ✏️
+                          </button>
+                          {confirmDelete === b.bookingId ? (
+                            <>
+                              <button className="btn btn-danger"
+                                onClick={handleDeleteConfirm}
+                                disabled={deleteLoading}
+                                style={{ padding: "4px 7px", fontSize: 11 }}>
+                                Yes
+                              </button>
+                              <button className="btn btn-ghost"
+                                onClick={() => setConfirmDelete(null)}
+                                style={{ padding: "4px 7px", fontSize: 11 }}>
+                                No
+                              </button>
+                            </>
+                          ) : (
+                            <button className="btn btn-ghost"
+                              onClick={() => handleDeleteClick(b.bookingId)}
+                              style={{ padding: "4px 8px", fontSize: 12, color: "var(--text-muted)", flex: 1 }}
+                              title="Delete booking">
+                              🗑️
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
