@@ -11,8 +11,9 @@ const BASE_URL = process.env.REACT_APP_API_URL || "";
 // ─── Empty form state ─────────────────────────────────────────────────────────
 
 // ─── Compress & resize image to base64 ───────────────────────────────────────
-// Resizes to max 800px wide, compresses to ~75% quality (~30-60KB)
-function compressImage(file, maxWidth = 800, quality = 0.75) {
+// Resizes to max 400px wide, compresses to 50% quality (~15-25KB / ~20K chars)
+// Google Sheets cell limit is 50,000 chars — this safely fits within that.
+function compressImage(file, maxWidth = 400, quality = 0.5) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -20,17 +21,29 @@ function compressImage(file, maxWidth = 800, quality = 0.75) {
       img.onload = () => {
         const canvas = document.createElement("canvas");
         let { width, height } = img;
-        if (width > maxWidth) { height = (height * maxWidth) / width; width = maxWidth; }
+        // Scale down proportionally
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width  = maxWidth;
+        }
         canvas.width  = width;
         canvas.height = height;
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        // Convert to JPEG with compression
+        const compressed = canvas.toDataURL("image/jpeg", quality);
+        // Safety check — warn if still large
+        if (compressed.length > 40000) {
+          // Try even harder compression
+          resolve(canvas.toDataURL("image/jpeg", 0.3));
+        } else {
+          resolve(compressed);
+        }
       };
-      img.onerror = reject;
+      img.onerror = () => reject(new Error("Could not read image"));
       img.src = e.target.result;
     };
-    reader.onerror = reject;
+    reader.onerror = () => reject(new Error("Could not read file"));
     reader.readAsDataURL(file);
   });
 }
@@ -238,10 +251,18 @@ function PropertyFormModal({ property, onClose, onSaved }) {
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
+                // Warn if file is very large
+                if (file.size > 10 * 1024 * 1024) {
+                  setError("Image too large. Please use an image under 10MB.");
+                  return;
+                }
                 try {
                   const compressed = await compressImage(file);
                   setForm((p) => ({ ...p, photoUrl: compressed }));
-                } catch { setError("Could not process image. Try a different file."); }
+                  setError(""); // clear any previous error
+                } catch (err) {
+                  setError("Could not process image. Try a different file (JPG or PNG recommended).");
+                }
               }}
             />
             {/* OR paste URL */}
