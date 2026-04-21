@@ -37,6 +37,29 @@ function urgencyConfig(days) {
   return           { color: "#4ecdc4", label: `${days}d left`,                   bg: "rgba(78,205,196,0.06)" };
 }
 
+// ─── Format phone number to WhatsApp-compatible international format ──────────
+// wa.me requires: country code + number, no spaces/dashes, no leading 0
+// Examples:
+//   0388888888   → 92388888888   (PK local with leading 0)
+//   +923001234567 → 923001234567  (already international)
+//   923001234567  → 923001234567  (already correct)
+function formatPhoneForWA(phone) {
+  if (!phone) return null;
+  // Strip everything except digits
+  let digits = phone.replace(/\D/g, "");
+  if (!digits) return null;
+
+  // If starts with 0 → replace with 92 (Pakistan country code)
+  if (digits.startsWith("0")) {
+    digits = "92" + digits.slice(1);
+  }
+  // If doesn't start with a country code (less than 11 digits), add 92
+  if (digits.length <= 10) {
+    digits = "92" + digits;
+  }
+  return digits;
+}
+
 // Generate WhatsApp reminder message
 function generateWAMessage(booking) {
   return encodeURIComponent(
@@ -134,9 +157,12 @@ export default function PaymentReminders({ bookings, currency, rate }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {pending.map((b) => {
-            const days   = daysFromToday(b.checkOut);
+            const days    = daysFromToday(b.checkOut);
             const urgency = urgencyConfig(days);
-            const waLink  = `https://wa.me/${b.phone?.replace(/\D/g,"")}?text=${generateWAMessage(b)}`;
+            const waPhone = formatPhoneForWA(b.phone);
+            const waLink  = waPhone
+              ? `https://wa.me/${waPhone}?text=${generateWAMessage(b)}`
+              : null;
 
             return (
               <div key={b.bookingId} className="card" style={{
@@ -191,7 +217,7 @@ export default function PaymentReminders({ bookings, currency, rate }) {
 
                 {/* Actions */}
                 <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                  {b.phone && (
+                  {waLink ? (
                     <a href={waLink} target="_blank" rel="noreferrer"
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 6,
@@ -203,6 +229,18 @@ export default function PaymentReminders({ bookings, currency, rate }) {
                       }}>
                       💬 WhatsApp
                     </a>
+                  ) : (
+                    <div title="No valid phone number saved for this guest"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        background: "rgba(90,88,112,0.2)",
+                        border: "1px solid rgba(90,88,112,0.2)",
+                        color: "var(--text-muted)", borderRadius: 8,
+                        padding: "7px 12px", fontSize: 12, fontWeight: 600,
+                        cursor: "not-allowed", opacity: 0.5,
+                      }}>
+                      💬 No Phone
+                    </div>
                   )}
                 </div>
               </div>
