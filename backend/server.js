@@ -450,7 +450,6 @@ app.post("/api/bookings", async (req, res) => {
     const { guestName, phone, checkIn, checkOut, guests, property, totalPrice, advancePaid, source, notes } = req.body;
     if (!guestName || !checkIn || !checkOut || !property) return res.status(400).json({ success: false, message: "Missing required fields" });
 
-    const sheets = getSheetsClient();
     await ensureHeaders(sheets, SN.bookings, ["Booking ID","Guest Name","Phone Number","Check-in Date","Check-out Date","Nights","Number of Guests","Property / Room","Total Price","Advance Paid","Remaining Amount","Booking Source","Notes","Status","Created At","Cancel Reason","Refund Issued"]);
 
     const remaining  = (parseFloat(totalPrice)||0) - (parseFloat(advancePaid)||0);
@@ -592,7 +591,6 @@ app.post("/api/properties", async (req, res) => {
     const SN = await getSN(req, sheets);
     const { name, description, photoUrl, noOverlap, maxGuests, pricePerNight } = req.body;
     if (!name) return res.status(400).json({ success: false, message: "Property name is required" });
-    const sheets = getSheetsClient();
     await ensureHeaders(sheets, SN.properties, ["Property Name","Description","Photo URL","No Overlap","Max Guests","Price Per Night","Created At"]);
     const rowIndex = await findRowIndex(sheets, SN.properties, name);
     if (rowIndex !== -1) return res.status(409).json({ success: false, message: "A property with this name already exists" });
