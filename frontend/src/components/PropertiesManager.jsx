@@ -7,6 +7,7 @@
 import React, { useState, useEffect } from "react";
 
 const BASE_URL = process.env.REACT_APP_API_URL || "";
+import { bizFetch, bizUrl } from "../utils/bizApi";
 
 // ─── Empty form state ─────────────────────────────────────────────────────────
 
@@ -365,7 +366,7 @@ export default function PropertiesManager({ onViewDashboard, onToast }) {
   const load = async () => {
     setLoading(true);
     try {
-      const res  = await fetch(`${BASE_URL}/api/properties`);
+      const res  = await bizFetch(`/api/properties`);
       const data = await res.json();
       setProperties(data.properties || []);
     } catch { onToast("Could not load properties.", "error"); }
@@ -376,7 +377,7 @@ export default function PropertiesManager({ onViewDashboard, onToast }) {
 
   const handleDelete = async (name) => {
     try {
-      await fetch(`${BASE_URL}/api/properties/${encodeURIComponent(name)}`, { method: "DELETE" });
+      await bizFetch(`/api/properties/${encodeURIComponent(name)}`, { method: "DELETE" });
       onToast(`"${name}" deleted.`, "success");
       load();
     } catch { onToast("Delete failed.", "error"); }

@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useRef } from "react";
 
 const BASE_URL = process.env.REACT_APP_API_URL || "";
+import { bizFetch, bizUrl } from "../utils/bizApi";
 
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString("en-PK", {
@@ -25,7 +26,7 @@ export default function InvoiceModal({ booking, onClose }) {
   useEffect(() => {
     const load = async () => {
       try {
-        const res  = await fetch(`${BASE_URL}/api/bookings/${booking.bookingId}/invoice`);
+        const res  = await bizFetch(`/api/bookings/${booking.bookingId}/invoice`);
         const json = await res.json();
         setData(json.booking);
       } catch { setData(booking); }

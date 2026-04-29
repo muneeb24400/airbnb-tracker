@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from "react";
 
 const BASE_URL = process.env.REACT_APP_API_URL || "";
+import { bizFetch, bizUrl } from "../utils/bizApi";
 
 // ─── Action display config ────────────────────────────────────────────────────
 const ACTION_CONFIG = {
@@ -46,7 +47,7 @@ export default function ActivityLog() {
     const load = async () => {
       setLoading(true);
       try {
-        const res  = await fetch(`${BASE_URL}/api/activity`);
+        const res  = await bizFetch(`/api/activity`);
         const data = await res.json();
         setActivities(data.activities || []);
       } catch {

@@ -7,6 +7,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 
 const BASE_URL = process.env.REACT_APP_API_URL || "";
+import { bizFetch, bizUrl } from "../utils/bizApi";
 
 const CATEGORIES = [
   { name: "Cleaning",    icon: "🧹" },
@@ -43,7 +44,7 @@ export default function ExpenseTracker({ properties, currency, rate }) {
   const load = async () => {
     setLoading(true);
     try {
-      const res  = await fetch(`${BASE_URL}/api/expenses`);
+      const res  = await bizFetch(`/api/expenses`);
       const data = await res.json();
       setExpenses(data.expenses || []);
     } catch { setError("Could not load expenses."); }
@@ -70,7 +71,7 @@ export default function ExpenseTracker({ properties, currency, rate }) {
     }
     setSaving(true); setError("");
     try {
-      const res  = await fetch(`${BASE_URL}/api/expenses`, {
+      const res  = await bizFetch(`/api/expenses`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
@@ -83,7 +84,7 @@ export default function ExpenseTracker({ properties, currency, rate }) {
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`${BASE_URL}/api/expenses/${id}`, { method: "DELETE" });
+      await bizFetch(`/api/expenses/${id}`, { method: "DELETE" });
       setExpenses((prev) => prev.filter((e) => e.expenseId !== id));
       setDelId(null);
     } catch { setError("Delete failed."); }

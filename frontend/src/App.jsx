@@ -18,6 +18,7 @@ import InvoiceModal       from "./components/InvoiceModal";
 import CalendarView       from "./components/CalendarView";
 import { Toast, useToast } from "./components/Toast";
 import { fetchBookings, addBooking, deleteBooking } from "./utils/api";
+import { bizFetch, getBizId } from "./utils/bizApi";
 import "./App.css";
 
 const BASE_URL = process.env.REACT_APP_API_URL || "";
@@ -82,10 +83,8 @@ export default function App() {
   // ── Load properties ─────────────────────────────────────────────────────────
   const loadProperties = useCallback(async () => {
     try {
-      const bizId = sessionStorage.getItem("st_businessId") || "";
-      const q     = bizId ? `?businessId=${encodeURIComponent(bizId)}` : "";
-      const res   = await fetch(`${BASE_URL}/api/properties${q}`);
-      const data  = await res.json();
+      const res  = await bizFetch("/api/properties");
+      const data = await res.json();
       setProperties(data.properties || []);
     } catch {}
   }, []);
@@ -117,18 +116,16 @@ export default function App() {
 
   const handleCompleteBooking = async (bookingId, paymentReceived = 0, booking = {}) => {
     try {
-      const bizId = sessionStorage.getItem("st_businessId") || "";
-      const q     = bizId ? `?businessId=${encodeURIComponent(bizId)}` : "";
-      await fetch(`${BASE_URL}/api/bookings/${bookingId}/status${q}`, {
+      await bizFetch(`/api/bookings/${bookingId}/status`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "Completed", businessId: bizId }),
+        body: JSON.stringify({ status: "Completed" }),
       });
       if (paymentReceived > 0) {
         const newAdvance   = (parseFloat(booking.advancePaid)||0) + paymentReceived;
         const newRemaining = Math.max(0, (parseFloat(booking.totalPrice)||0) - newAdvance);
-        await fetch(`${BASE_URL}/api/bookings/${bookingId}${q}`, {
+        await bizFetch(`/api/bookings/${bookingId}`, {
           method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...booking, advancePaid: newAdvance, remaining: newRemaining, status: "Completed", businessId: bizId }),
+          body: JSON.stringify({ ...booking, advancePaid: newAdvance, remaining: newRemaining, status: "Completed" }),
         });
         setBookings((prev) => prev.map((b) => b.bookingId === bookingId ? { ...b, status: "Completed", advancePaid: newAdvance, remaining: newRemaining } : b));
         addToast(`Completed! PKR ${paymentReceived.toLocaleString()} recorded ✅`, "success");

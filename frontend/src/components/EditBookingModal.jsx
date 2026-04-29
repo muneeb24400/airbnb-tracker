@@ -20,6 +20,7 @@ const PROPERTIES = [
 const STATUSES = ["Upcoming","Active","Completed","Cancelled"];
 
 const BASE_URL = process.env.REACT_APP_API_URL || "";
+import { bizFetch, bizUrl } from "../utils/bizApi";
 
 export default function EditBookingModal({ booking, onClose, onSaved }) {
   const [form,         setForm]         = useState({});
@@ -63,7 +64,7 @@ export default function EditBookingModal({ booking, onClose, onSaved }) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${BASE_URL}/api/bookings/${booking.bookingId}`, {
+      const res = await bizFetch(`/api/bookings/${booking.bookingId}`, {
         method:  "PUT",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify(form),
@@ -91,7 +92,7 @@ export default function EditBookingModal({ booking, onClose, onSaved }) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${BASE_URL}/api/bookings/${booking.bookingId}/status`, {
+      const res = await bizFetch(`/api/bookings/${booking.bookingId}/status`, {
         method:  "PATCH",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ status: "Cancelled", cancelReason, refundIssued }),
@@ -115,7 +116,7 @@ export default function EditBookingModal({ booking, onClose, onSaved }) {
     if (newStatus === "Cancelled") { setCancelMode(true); return; }
     setLoading(true);
     try {
-      await fetch(`${BASE_URL}/api/bookings/${booking.bookingId}/status`, {
+      await bizFetch(`/api/bookings/${booking.bookingId}/status`, {
         method:  "PATCH",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ status: newStatus }),

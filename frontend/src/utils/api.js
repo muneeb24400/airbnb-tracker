@@ -1,39 +1,29 @@
 /**
- * api.js - Centralised API helper functions
- * All calls include ?businessId= to scope data to the active business.
+ * api.js - Core API calls used by App.jsx
+ * Uses bizFetch to auto-inject businessId on every request.
  */
+import { bizFetch, getBizId } from "./bizApi";
 
 const BASE_URL = process.env.REACT_APP_API_URL || "";
 
-// Active business is stored in sessionStorage after selection
-function getBizId() {
-  return sessionStorage.getItem("st_businessId") || "";
-}
-
-function bizParam(extra = "") {
-  const id = getBizId();
-  const q  = id ? `businessId=${encodeURIComponent(id)}` : "";
-  return q ? `?${q}${extra}` : extra ? `?${extra.replace(/^&/, "")}` : "";
-}
-
 export async function fetchBookings() {
-  const res = await fetch(`${BASE_URL}/api/bookings${bizParam()}`);
+  const res = await bizFetch("/api/bookings");
   if (!res.ok) throw new Error("Failed to fetch bookings");
   return res.json();
 }
 
 export async function addBooking(data) {
-  const res = await fetch(`${BASE_URL}/api/bookings${bizParam()}`, {
-    method: "POST",
+  const res = await bizFetch("/api/bookings", {
+    method:  "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...data, businessId: getBizId() }),
+    body:    JSON.stringify({ ...data, businessId: getBizId() }),
   });
   if (!res.ok) { const e = await res.json(); throw new Error(e.message || "Failed to add booking"); }
   return res.json();
 }
 
 export async function deleteBooking(id) {
-  const res = await fetch(`${BASE_URL}/api/bookings/${id}${bizParam()}`, { method: "DELETE" });
+  const res = await bizFetch(`/api/bookings/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete booking");
   return res.json();
 }

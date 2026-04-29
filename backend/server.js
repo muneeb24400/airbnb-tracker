@@ -38,21 +38,56 @@ function getSheetsClient() {
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
 // ─── Fixed sheet names (global, not per-business) ────────────────────────────
-const USERS_SHEET      = process.env.USERS_SHEET      || "Users";
-const BUSINESSES_SHEET = process.env.BUSINESSES_SHEET || "Businesses";
+const USERS_SHEET       = process.env.USERS_SHEET      || "Users";
+const BUSINESSES_SHEET  = process.env.BUSINESSES_SHEET || "Businesses";
 const BIZ_MEMBERS_SHEET = "BusinessMembers";
 
-// ─── Per-business dynamic sheet names ────────────────────────────────────────
-// Allied Apartments uses the existing default sheet names (backward compatible).
-// New businesses get prefixed sheet names: "biz123_Bookings", etc.
+// ─── In-memory cache of businessId → sheetPrefix ─────────────────────────────
+// Avoids repeated Sheets lookups on every request.
+const prefixCache = new Map();
+
+// Allied Apartments gets its own prefix so it's fully isolated from everything else
+const ALLIED_PREFIX = "allied";
+
+// ─── Build sheet names from a prefix ─────────────────────────────────────────
 function getSheets(prefix) {
-  const p = prefix ? `${prefix}_` : "";
+  const p = prefix ? `${prefix}_` : `${ALLIED_PREFIX}_`;
   return {
-    bookings:    p ? `${p}Bookings`    : (process.env.SHEET_NAME    || "Bookings"),
-    activity:    p ? `${p}ActivityLog` : (process.env.ACTIVITY_SHEET || "ActivityLog"),
-    properties:  p ? `${p}Properties`  : (process.env.PROPERTIES_SHEET || "Properties"),
-    expenses:    p ? `${p}Expenses`    : (process.env.EXPENSES_SHEET  || "Expenses"),
+    bookings:   `${p}Bookings`,
+    activity:   `${p}ActivityLog`,
+    properties: `${p}Properties`,
+    expenses:   `${p}Expenses`,
   };
+}
+
+// ─── Resolve businessId → sheetPrefix ────────────────────────────────────────
+// Returns the prefix stored in the Businesses sheet for this businessId.
+// Allied Apartments always returns ALLIED_PREFIX.
+async function resolvePrefix(sheets, businessId) {
+  if (!businessId || businessId === "allied_apartments") return ALLIED_PREFIX;
+  if (prefixCache.has(businessId)) return prefixCache.get(businessId);
+
+  try {
+    const res  = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${BUSINESSES_SHEET}!A:F`,
+    });
+    const rows = res.data.values || [];
+    for (const row of rows.slice(1)) {
+      const id     = row[0] || "";
+      const prefix = row[4] || id.replace("biz_", "b");
+      prefixCache.set(id, prefix);
+    }
+  } catch {}
+
+  return prefixCache.get(businessId) || businessId.replace("biz_", "b");
+}
+
+// ─── Get scoped sheet names for a request ────────────────────────────────────
+async function getSN(req, sheets) {
+  const bizId  = req.query.businessId || req.body?.businessId || "";
+  const prefix = await resolvePrefix(sheets, bizId);
+  return getSheets(prefix);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -382,8 +417,7 @@ function getSheetPrefix(req) {
 // ══════════════════════════════════════════════════════════════════════════════
 app.post("/api/bookings", async (req, res) => {
   try {
-    const prefix = getSheetPrefix(req);
-    const SN     = getSheets(prefix);
+    const SN = await getSN(req, sheets);
     const { guestName, phone, checkIn, checkOut, guests, property, totalPrice, advancePaid, source, notes } = req.body;
     if (!guestName || !checkIn || !checkOut || !property) return res.status(400).json({ success: false, message: "Missing required fields" });
 
@@ -408,8 +442,7 @@ app.post("/api/bookings", async (req, res) => {
 
 app.get("/api/bookings", async (req, res) => {
   try {
-    const prefix = getSheetPrefix(req);
-    const SN     = getSheets(prefix);
+    const SN = await getSN(req, sheets);
     const sheets = getSheetsClient();
     const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SN.bookings}!A:Q` });
     const rows   = response.data.values || [];
@@ -427,8 +460,7 @@ app.get("/api/bookings", async (req, res) => {
 
 app.put("/api/bookings/:id", async (req, res) => {
   try {
-    const prefix = getSheetPrefix(req);
-    const SN     = getSheets(prefix);
+    const SN = await getSN(req, sheets);
     const { id } = req.params;
     const { guestName, phone, checkIn, checkOut, guests, property, totalPrice, advancePaid, source, notes, status } = req.body;
     const sheets   = getSheetsClient();
@@ -450,8 +482,7 @@ app.put("/api/bookings/:id", async (req, res) => {
 
 app.patch("/api/bookings/:id/status", async (req, res) => {
   try {
-    const prefix = getSheetPrefix(req);
-    const SN     = getSheets(prefix);
+    const SN = await getSN(req, sheets);
     const { id } = req.params;
     const { status, cancelReason, refundIssued } = req.body;
     const sheets   = getSheetsClient();
@@ -470,8 +501,7 @@ app.patch("/api/bookings/:id/status", async (req, res) => {
 
 app.delete("/api/bookings/:id", async (req, res) => {
   try {
-    const prefix = getSheetPrefix(req);
-    const SN     = getSheets(prefix);
+    const SN = await getSN(req, sheets);
     const { id } = req.params;
     const sheets   = getSheetsClient();
     const rowIndex = await findRowIndex(sheets, SN.bookings, id);
@@ -488,8 +518,7 @@ app.delete("/api/bookings/:id", async (req, res) => {
 
 app.get("/api/bookings/:id/invoice", async (req, res) => {
   try {
-    const prefix = getSheetPrefix(req);
-    const SN     = getSheets(prefix);
+    const SN = await getSN(req, sheets);
     const sheets = getSheetsClient();
     const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SN.bookings}!A:Q` });
     const row = (response.data.values||[]).find((r) => r[0] === req.params.id);
@@ -508,8 +537,7 @@ app.get("/api/bookings/:id/invoice", async (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 app.get("/api/properties", async (req, res) => {
   try {
-    const prefix = getSheetPrefix(req);
-    const SN     = getSheets(prefix);
+    const SN = await getSN(req, sheets);
     const sheets = getSheetsClient();
     await ensureHeaders(sheets, SN.properties, ["Property Name","Description","Photo URL","No Overlap","Max Guests","Price Per Night","Created At"]);
     const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SN.properties}!A:G` });
@@ -526,8 +554,7 @@ app.get("/api/properties", async (req, res) => {
 
 app.post("/api/properties", async (req, res) => {
   try {
-    const prefix = getSheetPrefix(req);
-    const SN     = getSheets(prefix);
+    const SN = await getSN(req, sheets);
     const { name, description, photoUrl, noOverlap, maxGuests, pricePerNight } = req.body;
     if (!name) return res.status(400).json({ success: false, message: "Property name is required" });
     const sheets = getSheetsClient();
@@ -583,8 +610,7 @@ app.delete("/api/properties/:name", async (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 app.get("/api/expenses", async (req, res) => {
   try {
-    const prefix = getSheetPrefix(req);
-    const SN     = getSheets(prefix);
+    const SN = await getSN(req, sheets);
     const sheets = getSheetsClient();
     await ensureHeaders(sheets, SN.expenses, ["Expense ID","Date","Property","Category","Description","Amount (PKR)","Created At"]);
     const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SN.expenses}!A:G` });
@@ -600,8 +626,7 @@ app.get("/api/expenses", async (req, res) => {
 
 app.post("/api/expenses", async (req, res) => {
   try {
-    const prefix = getSheetPrefix(req);
-    const SN     = getSheets(prefix);
+    const SN = await getSN(req, sheets);
     const { date, property, category, description, amount } = req.body;
     if (!date || !property || !amount) return res.status(400).json({ success: false, message: "Date, property and amount are required" });
     const sheets    = getSheetsClient();
@@ -637,8 +662,7 @@ app.delete("/api/expenses/:id", async (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 app.get("/api/activity", async (req, res) => {
   try {
-    const prefix = getSheetPrefix(req);
-    const SN     = getSheets(prefix);
+    const SN = await getSN(req, sheets);
     const sheets = getSheetsClient();
     const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SN.activity}!A:F` });
     const rows   = response.data.values || [];

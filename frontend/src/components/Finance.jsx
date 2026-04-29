@@ -10,6 +10,7 @@ import PaymentReminders from "./PaymentReminders";
 import ExpenseTracker   from "./ExpenseTracker";
 
 const BASE_URL = process.env.REACT_APP_API_URL || "";
+import { bizFetch, bizUrl } from "../utils/bizApi";
 
 export default function Finance({ bookings, properties }) {
   const [subTab,    setSubTab]    = useState("reminders");
@@ -23,7 +24,7 @@ export default function Finance({ bookings, properties }) {
     const fetchRate = async () => {
       setRateLoading(true);
       try {
-        const res  = await fetch(`${BASE_URL}/api/currency`);
+        const res  = await bizFetch(`/api/currency`);
         const data = await res.json();
         if (data.success && data.rate) {
           setRate(data.rate);
