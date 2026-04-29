@@ -470,8 +470,10 @@ app.post("/api/bookings", async (req, res) => {
 
 app.get("/api/bookings", async (req, res) => {
   try {
-    const SN = await getSN(req, sheets);
     const sheets = getSheetsClient();
+    const SN = await getSN(req, sheets);
+    // Auto-create the sheet tab if it doesn't exist yet
+    await ensureHeaders(sheets, SN.bookings, ["Booking ID","Guest Name","Phone Number","Check-in Date","Check-out Date","Nights","Number of Guests","Property / Room","Total Price","Advance Paid","Remaining Amount","Booking Source","Notes","Status","Created At","Cancel Reason","Refund Issued"]);
     const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SN.bookings}!A:Q` });
     const rows   = response.data.values || [];
     if (rows.length <= 1) return res.json({ success: true, bookings: [] });
@@ -546,8 +548,8 @@ app.delete("/api/bookings/:id", async (req, res) => {
 
 app.get("/api/bookings/:id/invoice", async (req, res) => {
   try {
-    const SN = await getSN(req, sheets);
     const sheets = getSheetsClient();
+    const SN = await getSN(req, sheets);
     const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SN.bookings}!A:Q` });
     const row = (response.data.values||[]).find((r) => r[0] === req.params.id);
     if (!row) return res.status(404).json({ success: false, message: "Booking not found" });
@@ -565,8 +567,8 @@ app.get("/api/bookings/:id/invoice", async (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 app.get("/api/properties", async (req, res) => {
   try {
-    const SN = await getSN(req, sheets);
     const sheets = getSheetsClient();
+    const SN = await getSN(req, sheets);
     await ensureHeaders(sheets, SN.properties, ["Property Name","Description","Photo URL","No Overlap","Max Guests","Price Per Night","Created At"]);
     const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SN.properties}!A:G` });
     const rows = response.data.values || [];
@@ -638,8 +640,8 @@ app.delete("/api/properties/:name", async (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 app.get("/api/expenses", async (req, res) => {
   try {
-    const SN = await getSN(req, sheets);
     const sheets = getSheetsClient();
+    const SN = await getSN(req, sheets);
     await ensureHeaders(sheets, SN.expenses, ["Expense ID","Date","Property","Category","Description","Amount (PKR)","Created At"]);
     const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SN.expenses}!A:G` });
     const rows   = response.data.values || [];
@@ -690,8 +692,8 @@ app.delete("/api/expenses/:id", async (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 app.get("/api/activity", async (req, res) => {
   try {
-    const SN = await getSN(req, sheets);
     const sheets = getSheetsClient();
+    const SN = await getSN(req, sheets);
     const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SN.activity}!A:F` });
     const rows   = response.data.values || [];
     if (rows.length <= 1) return res.json({ success: true, activities: [] });
