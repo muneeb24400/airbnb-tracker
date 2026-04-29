@@ -445,6 +445,7 @@ function getSheetPrefix(req) {
 // ══════════════════════════════════════════════════════════════════════════════
 app.post("/api/bookings", async (req, res) => {
   try {
+    const sheets = getSheetsClient();
     const SN = await getSN(req, sheets);
     const { guestName, phone, checkIn, checkOut, guests, property, totalPrice, advancePaid, source, notes } = req.body;
     if (!guestName || !checkIn || !checkOut || !property) return res.status(400).json({ success: false, message: "Missing required fields" });
@@ -490,6 +491,7 @@ app.get("/api/bookings", async (req, res) => {
 
 app.put("/api/bookings/:id", async (req, res) => {
   try {
+    const sheets = getSheetsClient();
     const SN = await getSN(req, sheets);
     const { id } = req.params;
     const { guestName, phone, checkIn, checkOut, guests, property, totalPrice, advancePaid, source, notes, status } = req.body;
@@ -512,6 +514,7 @@ app.put("/api/bookings/:id", async (req, res) => {
 
 app.patch("/api/bookings/:id/status", async (req, res) => {
   try {
+    const sheets = getSheetsClient();
     const SN = await getSN(req, sheets);
     const { id } = req.params;
     const { status, cancelReason, refundIssued } = req.body;
@@ -531,6 +534,7 @@ app.patch("/api/bookings/:id/status", async (req, res) => {
 
 app.delete("/api/bookings/:id", async (req, res) => {
   try {
+    const sheets = getSheetsClient();
     const SN = await getSN(req, sheets);
     const { id } = req.params;
     const sheets   = getSheetsClient();
@@ -584,6 +588,7 @@ app.get("/api/properties", async (req, res) => {
 
 app.post("/api/properties", async (req, res) => {
   try {
+    const sheets = getSheetsClient();
     const SN = await getSN(req, sheets);
     const { name, description, photoUrl, noOverlap, maxGuests, pricePerNight } = req.body;
     if (!name) return res.status(400).json({ success: false, message: "Property name is required" });
@@ -656,6 +661,7 @@ app.get("/api/expenses", async (req, res) => {
 
 app.post("/api/expenses", async (req, res) => {
   try {
+    const sheets = getSheetsClient();
     const SN = await getSN(req, sheets);
     const { date, property, category, description, amount } = req.body;
     if (!date || !property || !amount) return res.status(400).json({ success: false, message: "Date, property and amount are required" });
