@@ -118,8 +118,34 @@ function deriveStatus(ci, co) {
   return "Upcoming";
 }
 
-// ─── Ensure headers helper ────────────────────────────────────────────────────
+// ─── Ensure sheet tab exists, auto-create it if missing, then write headers ────
 async function ensureHeaders(sheets, sheetName, headers) {
+  // Step 1 — check if this tab exists in the spreadsheet
+  let tabExists = false;
+  try {
+    const info   = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+    const titles = (info.data.sheets || []).map((s) => s.properties.title);
+    tabExists    = titles.includes(sheetName);
+  } catch (err) {
+    console.error(`Could not check tabs: ${err.message}`);
+    return;
+  }
+
+  // Step 2 — create the tab if it does not exist
+  if (!tabExists) {
+    try {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: { requests: [{ addSheet: { properties: { title: sheetName } } }] },
+      });
+      console.log(`Created sheet tab: "${sheetName}"`);
+    } catch (err) {
+      console.error(`Could not create tab "${sheetName}": ${err.message}`);
+      return;
+    }
+  }
+
+  // Step 3 — write headers if row 1 is empty
   try {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
@@ -133,7 +159,9 @@ async function ensureHeaders(sheets, sheetName, headers) {
         requestBody: { values: [headers] },
       });
     }
-  } catch {}
+  } catch (err) {
+    console.error(`Could not write headers to "${sheetName}": ${err.message}`);
+  }
 }
 
 // ─── Log activity ─────────────────────────────────────────────────────────────
