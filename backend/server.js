@@ -38,55 +38,59 @@ function getSheetsClient() {
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
 // ─── Fixed sheet names (global, not per-business) ────────────────────────────
-const USERS_SHEET       = process.env.USERS_SHEET      || "Users";
-const BUSINESSES_SHEET  = process.env.BUSINESSES_SHEET || "Businesses";
+const USERS_SHEET       = process.env.USERS_SHEET       || "Users";
+const BUSINESSES_SHEET  = process.env.BUSINESSES_SHEET  || "Businesses";
 const BIZ_MEMBERS_SHEET = "BusinessMembers";
 
-// ─── In-memory cache of businessId → sheetPrefix ─────────────────────────────
-// Avoids repeated Sheets lookups on every request.
-const prefixCache = new Map();
+// ─── Allied Apartments uses your ORIGINAL sheet tab names (backward compatible)
+// These are the tabs that already have your existing data.
+const ALLIED_SHEETS = {
+  bookings:   process.env.SHEET_NAME       || "Bookings",
+  activity:   process.env.ACTIVITY_SHEET   || "ActivityLog",
+  properties: process.env.PROPERTIES_SHEET || "Properties",
+  expenses:   process.env.EXPENSES_SHEET   || "Expenses",
+};
 
-// Allied Apartments gets its own prefix so it's fully isolated from everything else
-const ALLIED_PREFIX = "allied";
-
-// ─── Build sheet names from a prefix ─────────────────────────────────────────
+// ─── Build sheet names for a NEW business using its prefix ───────────────────
+// e.g. prefix "b1abc" → "b1abc_Bookings", "b1abc_Properties" etc.
 function getSheets(prefix) {
-  const p = prefix ? `${prefix}_` : `${ALLIED_PREFIX}_`;
   return {
-    bookings:   `${p}Bookings`,
-    activity:   `${p}ActivityLog`,
-    properties: `${p}Properties`,
-    expenses:   `${p}Expenses`,
+    bookings:   `${prefix}_Bookings`,
+    activity:   `${prefix}_ActivityLog`,
+    properties: `${prefix}_Properties`,
+    expenses:   `${prefix}_Expenses`,
   };
 }
 
-// ─── Resolve businessId → sheetPrefix ────────────────────────────────────────
-// Returns the prefix stored in the Businesses sheet for this businessId.
-// Allied Apartments always returns ALLIED_PREFIX.
-async function resolvePrefix(sheets, businessId) {
-  if (!businessId || businessId === "allied_apartments") return ALLIED_PREFIX;
-  if (prefixCache.has(businessId)) return prefixCache.get(businessId);
+// ─── In-memory cache of businessId → sheetPrefix ─────────────────────────────
+const prefixCache = new Map();
 
-  try {
-    const res  = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${BUSINESSES_SHEET}!A:F`,
-    });
-    const rows = res.data.values || [];
-    for (const row of rows.slice(1)) {
-      const id     = row[0] || "";
-      const prefix = row[4] || id.replace("biz_", "b");
-      prefixCache.set(id, prefix);
-    }
-  } catch {}
+// ─── Resolve businessId → correct sheet name set ─────────────────────────────
+// Allied Apartments → returns ALLIED_SHEETS (original tabs, existing data)
+// Any other business → returns prefixed tabs isolated per business
+async function getSN(req, sheetsClient) {
+  const bizId = req.query.businessId || req.body?.businessId || "";
 
-  return prefixCache.get(businessId) || businessId.replace("biz_", "b");
-}
+  // Allied Apartments always uses the original sheet tabs
+  if (!bizId || bizId === "allied_apartments") return ALLIED_SHEETS;
 
-// ─── Get scoped sheet names for a request ────────────────────────────────────
-async function getSN(req, sheets) {
-  const bizId  = req.query.businessId || req.body?.businessId || "";
-  const prefix = await resolvePrefix(sheets, bizId);
+  // For other businesses, look up their sheetPrefix from the Businesses sheet
+  if (!prefixCache.has(bizId)) {
+    try {
+      const res  = await sheetsClient.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${BUSINESSES_SHEET}!A:F`,
+      });
+      const rows = res.data.values || [];
+      for (const row of rows.slice(1)) {
+        const id     = row[0] || "";
+        const prefix = row[4] || id.replace("biz_", "b");
+        if (id) prefixCache.set(id, prefix);
+      }
+    } catch {}
+  }
+
+  const prefix = prefixCache.get(bizId) || bizId.replace("biz_", "b");
   return getSheets(prefix);
 }
 
