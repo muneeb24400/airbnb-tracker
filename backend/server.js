@@ -494,7 +494,6 @@ app.put("/api/bookings/:id", async (req, res) => {
     const SN = await getSN(req, sheets);
     const { id } = req.params;
     const { guestName, phone, checkIn, checkOut, guests, property, totalPrice, advancePaid, source, notes, status } = req.body;
-    const sheets   = getSheetsClient();
     const rowIndex = await findRowIndex(sheets, SN.bookings, id);
     if (rowIndex === -1) return res.status(404).json({ success: false, message: "Booking not found" });
     const remaining = (parseFloat(totalPrice)||0) - (parseFloat(advancePaid)||0);
@@ -517,7 +516,6 @@ app.patch("/api/bookings/:id/status", async (req, res) => {
     const SN = await getSN(req, sheets);
     const { id } = req.params;
     const { status, cancelReason, refundIssued } = req.body;
-    const sheets   = getSheetsClient();
     const rowIndex = await findRowIndex(sheets, SN.bookings, id);
     if (rowIndex === -1) return res.status(404).json({ success: false, message: "Booking not found" });
     await sheets.spreadsheets.values.update({
@@ -536,7 +534,6 @@ app.delete("/api/bookings/:id", async (req, res) => {
     const sheets = getSheetsClient();
     const SN = await getSN(req, sheets);
     const { id } = req.params;
-    const sheets   = getSheetsClient();
     const rowIndex = await findRowIndex(sheets, SN.bookings, id);
     if (rowIndex === -1) return res.status(404).json({ success: false, message: "Booking not found" });
     const sheetId  = await getNumericSheetId(sheets, SN.bookings);
@@ -663,7 +660,6 @@ app.post("/api/expenses", async (req, res) => {
     const SN = await getSN(req, sheets);
     const { date, property, category, description, amount } = req.body;
     if (!date || !property || !amount) return res.status(400).json({ success: false, message: "Date, property and amount are required" });
-    const sheets    = getSheetsClient();
     await ensureHeaders(sheets, SN.expenses, ["Expense ID","Date","Property","Category","Description","Amount (PKR)","Created At"]);
     const expenseId = `EX-${Date.now().toString(36).toUpperCase()}`;
     await sheets.spreadsheets.values.append({
